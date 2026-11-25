@@ -480,6 +480,57 @@ async function startServer() {
     res.json({ user: toSafeUser(user, user) });
   });
 
+  // Self-service profile update for every authenticated role
+  app.patch('/api/auth/profile', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    if (req.body?.name !== undefined) {
+      const name = String(req.body.name).trim();
+      if (!name) {
+        res.status(400).json({ error: 'Name cannot be empty.' });
+        return;
+      }
+      user.name = name;
+    }
+    if (req.body?.bio !== undefined) {
+      user.bio = String(req.body.bio).trim().slice(0, 800);
+    }
+    if (req.body?.specialization !== undefined) {
+      user.specialization = String(req.body.specialization).trim().slice(0, 120);
+    }
+    if (req.body?.country !== undefined) {
+      user.country = String(req.body.country).trim().slice(0, 80);
+    }
+    if (req.body?.educationSystem !== undefined) {
+      user.educationSystem = String(req.body.educationSystem).trim().slice(0, 120);
+    }
+    if (req.body?.educationLevel !== undefined) {
+      user.educationLevel = String(req.body.educationLevel).trim().slice(0, 120);
+    }
+    if (req.body?.phone !== undefined) {
+      user.phone = String(req.body.phone).trim().slice(0, 40);
+    }
+    if (req.body?.homeAddress !== undefined) {
+      user.homeAddress = String(req.body.homeAddress).trim().slice(0, 200);
+    }
+    if (req.body?.institutionName !== undefined && user.role === 'INSTITUTION_ADMIN') {
+      const instName = String(req.body.institutionName).trim().slice(0, 160);
+      if (instName) {
+        user.institutionName = instName;
+        for (const u of db.users) {
+          if (u.institutionId && u.institutionId === user.institutionId) {
+            u.institutionName = instName;
+          }
+        }
+      }
+    }
+    if (req.body?.followPriceUsd !== undefined && isContributorRole(user.role)) {
+      user.followPriceUsd = Math.max(0, Number(req.body.followPriceUsd) || 0);
+    }
+    logAudit(user, 'PROFILE_UPDATED', 'USER', user.id, `${user.name} updated profile settings.`);
+    persist();
+    res.json({ user: toSafeUser(user, user) });
+  });
+
   // ---------------- PUBLIC GATEWAY INFO (SYSTEM-EXTRACTED, STRICTLY SANITIZED) ----------------
   function mapLevelBucket(
     level: string
@@ -810,10 +861,251 @@ async function startServer() {
       resources: db.resources.map((r) => ({ ...r, filePath: undefined })),
       academicDocs: enrichedAcademicDocs,
       courses: db.courses,
+      liveSessions: db.liveSessions,
+      educationLevels: getPlatformGatewayConfig().educationLevels,
       outboxEmails: db.outboxEmails,
       auditLogs: db.auditLogs.slice(0, 60),
       ledger: db.ledger,
     });
+  });
+
+  // Safe upload file deletion helper
+  function safeDeleteUploadedFile(relPath?: string) {
+    if (!relPath) return;
+    const resolved = path.resolve(UPLOAD_DIR, relPath);
+    if (resolved.startsWith(UPLOAD_DIR + path.sep) && fs.existsSync(resolved)) {
+      try {
+        fs.unlinkSync(resolved);
+      } catch {
+        // Ignore filesystem unlink error
+      }
+    }
+  }
+
+  // Master Admin full User CRUD
+  app.post('/api/admin/users', requireAuth, requireRole('MASTER_ADMIN'), (req: AuthedRequest, res) => {
+    const admin = req.authUser!;
+    const name = String(req.body?.name || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const role = String(req.body?.role || 'LEARNER') as UserRole;
+    const password = String(req.body?.password || '').trim() || `Akd-${crypto.randomBytes(4).toString('hex')}!`;
+    if (!name || !email || password.length < 8) {
+      res.status(400).json({ error: 'Name, valid email, and 8+ char password are required.' });
+      return;
+    }
+    if (!['MASTER_ADMIN', 'INSTITUTION_ADMIN', 'SOLO_EDUCATOR', 'COURSE_ADMIN', 'LEARNER'].includes(role)) {
+      res.status(400).json({ error: 'Invalid user role.' });
+      return;
+    }
+    if (db.users.some((u) => u.email.toLowerCase() === email)) {
+      res.status(409).json({ error: 'Email is already registered on Akademi.' });
+      return;
+    }
+    const institutionName = req.body?.institutionName ? String(req.body.institutionName).trim() : undefined;
+    const institutionId =
+      role === 'INSTITUTION_ADMIN'
+        ? `inst-${crypto.randomUUID().slice(0, 6)}`
+        : req.body?.institutionId
+          ? String(req.body.institutionId).trim()
+          : undefined;
+    const accountCategory = (req.body?.accountCategory ||
+      (role === 'INSTITUTION_ADMIN' || role === 'COURSE_ADMIN'
+        ? 'SCHOOL_INSTITUTION'
+        : role === 'SOLO_EDUCATOR'
+          ? 'SOLO_TEACHER'
+          : undefined)) as AccountCategory | undefined;
+
+    const newUser: StoredUser = {
+      id: `usr-${crypto.randomUUID().slice(0, 8)}`,
+      email,
+      name,
+      role,
+      accountCategory,
+      institutionId,
+      institutionName,
+      bio: String(req.body?.bio || `Akademi ${role.replace('_', ' ')} profile.`).trim(),
+      specialization: String(req.body?.specialization || 'General Studies').trim(),
+      educationLevel: req.body?.educationLevel ? String(req.body.educationLevel).trim() : undefined,
+      country: String(req.body?.country || 'Uganda').trim(),
+      educationSystem: String(req.body?.educationSystem || 'UNEB / NCHE Uganda').trim(),
+      phone: req.body?.phone ? String(req.body.phone).trim() : undefined,
+      mustChangePassword: Boolean(req.body?.mustChangePassword),
+      kycStatus: (req.body?.kycStatus || (role === 'LEARNER' || role === 'MASTER_ADMIN' ? 'VERIFIED' : 'UNSUBMITTED')) as StoredUser['kycStatus'],
+      subscriptionStatus: (req.body?.subscriptionStatus || (role === 'LEARNER' ? 'INACTIVE' : 'ACTIVE')) as StoredUser['subscriptionStatus'],
+      subscriptionPlan:
+        role === 'INSTITUTION_ADMIN'
+          ? 'INSTITUTION_CAMPUS'
+          : isContributorRole(role)
+            ? 'SOLO_PRO'
+            : req.body?.platformPassActive
+              ? 'AKADEMI_PASS'
+              : undefined,
+      followPriceUsd: Math.max(0, Number(req.body?.followPriceUsd || 0)),
+      followerIds: [],
+      followingCreatorIds: [],
+      paidFollowCreatorIds: [],
+      purchasedResourceIds: [],
+      purchasedCourseIds: [],
+      platformPassActive: Boolean(req.body?.platformPassActive),
+      createdAt: new Date().toISOString(),
+      passwordHash: hashPassword(password),
+    };
+
+    db.users.push(newUser);
+    queueOutboxEmail(
+      email,
+      name,
+      'Akademi Account Provisioned by Master Admin',
+      `Your Akademi account (${role}) is ready.\nEmail: ${email}\nPassword: ${password}`,
+      'CREDENTIALS'
+    );
+    logAudit(admin, 'USER_CREATED', 'USER', newUser.id, `Master Admin created ${name} (${role}).`);
+    persist();
+    res.status(201).json({ user: toSafeUser(newUser, admin), issuedPassword: password });
+  });
+
+  app.patch('/api/admin/users/:id', requireAuth, requireRole('MASTER_ADMIN'), (req: AuthedRequest, res) => {
+    const admin = req.authUser!;
+    const target = db.users.find((u) => u.id === req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'User not found.' });
+      return;
+    }
+
+    if (req.body?.role !== undefined) {
+      const nextRole = String(req.body.role) as UserRole;
+      if (!['MASTER_ADMIN', 'INSTITUTION_ADMIN', 'SOLO_EDUCATOR', 'COURSE_ADMIN', 'LEARNER'].includes(nextRole)) {
+        res.status(400).json({ error: 'Invalid user role.' });
+        return;
+      }
+      if (
+        target.role === 'MASTER_ADMIN' &&
+        nextRole !== 'MASTER_ADMIN' &&
+        db.users.filter((u) => u.role === 'MASTER_ADMIN').length <= 1
+      ) {
+        res.status(400).json({ error: 'At least one Master Admin must remain on the platform.' });
+        return;
+      }
+      target.role = nextRole;
+      if (nextRole === 'INSTITUTION_ADMIN' && !target.institutionId) {
+        target.institutionId = `inst-${crypto.randomUUID().slice(0, 6)}`;
+      }
+    }
+
+    if (req.body?.email !== undefined) {
+      const nextEmail = String(req.body.email).trim().toLowerCase();
+      if (!nextEmail) {
+        res.status(400).json({ error: 'Email cannot be empty.' });
+        return;
+      }
+      if (db.users.some((u) => u.id !== target.id && u.email.toLowerCase() === nextEmail)) {
+        res.status(409).json({ error: 'Another account already uses this email.' });
+        return;
+      }
+      target.email = nextEmail;
+    }
+
+    if (req.body?.name !== undefined) target.name = String(req.body.name).trim() || target.name;
+    if (req.body?.specialization !== undefined) target.specialization = String(req.body.specialization).trim();
+    if (req.body?.bio !== undefined) target.bio = String(req.body.bio).trim();
+    if (req.body?.country !== undefined) target.country = String(req.body.country).trim();
+    if (req.body?.educationSystem !== undefined) target.educationSystem = String(req.body.educationSystem).trim();
+    if (req.body?.educationLevel !== undefined) target.educationLevel = String(req.body.educationLevel).trim();
+    if (req.body?.institutionName !== undefined) target.institutionName = String(req.body.institutionName).trim() || undefined;
+    if (req.body?.phone !== undefined) target.phone = String(req.body.phone).trim() || undefined;
+    if (req.body?.homeAddress !== undefined) target.homeAddress = String(req.body.homeAddress).trim() || undefined;
+    if (req.body?.followPriceUsd !== undefined) target.followPriceUsd = Math.max(0, Number(req.body.followPriceUsd) || 0);
+    if (req.body?.platformPassActive !== undefined) target.platformPassActive = Boolean(req.body.platformPassActive);
+    if (req.body?.mustChangePassword !== undefined) target.mustChangePassword = Boolean(req.body.mustChangePassword);
+
+    if (req.body?.kycStatus !== undefined) {
+      target.kycStatus = String(req.body.kycStatus) as StoredUser['kycStatus'];
+      sendToUser(target.id, 'kyc:updated', { kycStatus: target.kycStatus });
+    }
+    if (req.body?.subscriptionStatus !== undefined) {
+      target.subscriptionStatus = String(req.body.subscriptionStatus) as StoredUser['subscriptionStatus'];
+      target.subscriptionUpdatedAt = new Date().toISOString();
+      sendToUser(target.id, 'subscription:updated', {
+        subscriptionStatus: target.subscriptionStatus,
+        subscriptionPlan: target.subscriptionPlan,
+      });
+    }
+    if (req.body?.resetPassword && String(req.body.resetPassword).trim().length >= 8) {
+      target.passwordHash = hashPassword(String(req.body.resetPassword).trim());
+    }
+
+    logAudit(admin, 'USER_UPDATED', 'USER', target.id, `Master Admin updated profile/permissions for ${target.name}.`);
+    persist();
+    res.json({ user: toSafeUser(target, admin) });
+  });
+
+  app.delete('/api/admin/users/:id', requireAuth, requireRole('MASTER_ADMIN'), (req: AuthedRequest, res) => {
+    const admin = req.authUser!;
+    const target = db.users.find((u) => u.id === req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'User not found.' });
+      return;
+    }
+    if (target.id === admin.id) {
+      res.status(400).json({ error: 'You cannot delete the currently signed-in Master Admin account.' });
+      return;
+    }
+    if (target.role === 'MASTER_ADMIN' && db.users.filter((u) => u.role === 'MASTER_ADMIN').length <= 1) {
+      res.status(400).json({ error: 'Cannot delete the last Master Admin.' });
+      return;
+    }
+
+    // Cascade cleanup of owned assets & references
+    for (const r of db.resources.filter((item) => item.ownerId === target.id)) {
+      safeDeleteUploadedFile(r.filePath);
+    }
+    const deletedResourceIds = new Set(db.resources.filter((r) => r.ownerId === target.id).map((r) => r.id));
+    db.resources = db.resources.filter((r) => r.ownerId !== target.id);
+
+    const deletedCourseIds = new Set(db.courses.filter((c) => c.ownerId === target.id).map((c) => c.id));
+    db.courses = db.courses
+      .filter((c) => c.ownerId !== target.id)
+      .map((c) => ({
+        ...c,
+        enrolledLearnerIds: c.enrolledLearnerIds.filter((id) => id !== target.id),
+        resourceIds: c.resourceIds.filter((rid) => !deletedResourceIds.has(rid)),
+        assignedInstructorId: c.assignedInstructorId === target.id ? undefined : c.assignedInstructorId,
+      }));
+
+    db.enrollments = db.enrollments.filter(
+      (e) => e.learnerId !== target.id && e.ownerId !== target.id && !deletedCourseIds.has(e.courseId)
+    );
+    db.liveSessions = db.liveSessions
+      .filter((s) => s.hostId !== target.id && !deletedCourseIds.has(s.courseId))
+      .map((s) => ({
+        ...s,
+        pinnedResourceIds: s.pinnedResourceIds.filter((rid) => !deletedResourceIds.has(rid)),
+      }));
+
+    for (const d of db.learnerAcademicDocs.filter((doc) => doc.learnerId === target.id)) {
+      safeDeleteUploadedFile(d.filePath);
+    }
+    db.learnerAcademicDocs = db.learnerAcademicDocs.filter((doc) => doc.learnerId !== target.id);
+
+    for (const k of db.kycSubmissions.filter((sub) => sub.userId === target.id)) {
+      safeDeleteUploadedFile(k.idFilePath);
+      safeDeleteUploadedFile(k.credentialFilePath);
+    }
+    db.kycSubmissions = db.kycSubmissions.filter((sub) => sub.userId !== target.id);
+
+    db.tickets = db.tickets.filter((t) => t.userId !== target.id);
+    db.messageThreads = db.messageThreads.filter((t) => !t.participantIds.includes(target.id));
+
+    for (const u of db.users) {
+      u.followerIds = u.followerIds.filter((id) => id !== target.id);
+      u.followingCreatorIds = u.followingCreatorIds.filter((id) => id !== target.id);
+      u.paidFollowCreatorIds = u.paidFollowCreatorIds.filter((id) => id !== target.id);
+    }
+
+    db.users = db.users.filter((u) => u.id !== target.id);
+    logAudit(admin, 'USER_DELETED', 'USER', target.id, `Master Admin deleted user ${target.name} (${target.email}).`);
+    persist();
+    res.json({ deletedId: target.id });
   });
 
   app.post('/api/admin/requests/:id/approve', requireAuth, requireRole('MASTER_ADMIN'), (req: AuthedRequest, res) => {
@@ -1056,6 +1348,34 @@ async function startServer() {
     res.json({ resource: { ...item, filePath: undefined } });
   });
 
+  app.delete('/api/admin/requests/:id', requireAuth, requireRole('MASTER_ADMIN'), (req: AuthedRequest, res) => {
+    const admin = req.authUser!;
+    const reqItem = db.accountRequests.find((r) => r.id === req.params.id);
+    if (!reqItem) {
+      res.status(404).json({ error: 'Account request not found.' });
+      return;
+    }
+    db.accountRequests = db.accountRequests.filter((r) => r.id !== reqItem.id);
+    logAudit(admin, 'ACCOUNT_REQUEST_DELETED', 'REQUEST', reqItem.id, `Deleted application from ${reqItem.fullName}.`);
+    persist();
+    res.json({ deletedId: reqItem.id });
+  });
+
+  app.delete('/api/admin/kyc/:id', requireAuth, requireRole('MASTER_ADMIN'), (req: AuthedRequest, res) => {
+    const admin = req.authUser!;
+    const kyc = db.kycSubmissions.find((k) => k.id === req.params.id);
+    if (!kyc) {
+      res.status(404).json({ error: 'KYC submission not found.' });
+      return;
+    }
+    safeDeleteUploadedFile(kyc.idFilePath);
+    safeDeleteUploadedFile(kyc.credentialFilePath);
+    db.kycSubmissions = db.kycSubmissions.filter((k) => k.id !== kyc.id);
+    logAudit(admin, 'KYC_DELETED', 'KYC', kyc.id, `Deleted KYC submission for ${kyc.userName}.`);
+    persist();
+    res.json({ deletedId: kyc.id });
+  });
+
   // ---------------- CONTRIBUTOR & INSTITUTION STUDIO ----------------
   app.post(
     '/api/contributor/kyc',
@@ -1206,11 +1526,11 @@ async function startServer() {
   app.post(
     '/api/contributor/resources',
     requireAuth,
-    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN'),
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
     upload.single('file'),
     (req: AuthedRequest, res) => {
       const user = req.authUser!;
-      if (user.kycStatus !== 'VERIFIED' || user.subscriptionStatus !== 'ACTIVE') {
+      if (user.role !== 'MASTER_ADMIN' && (user.kycStatus !== 'VERIFIED' || user.subscriptionStatus !== 'ACTIVE')) {
         res.status(403).json({
           error:
             'Publishing is locked until your identity is verified and your subscription is ACTIVE.',
@@ -1274,13 +1594,105 @@ async function startServer() {
     }
   );
 
+  app.patch(
+    '/api/resources/:id',
+    requireAuth,
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
+    upload.single('file'),
+    (req: AuthedRequest, res) => {
+      const actor = req.authUser!;
+      const item = db.resources.find((r) => r.id === req.params.id);
+      if (!item) {
+        res.status(404).json({ error: 'Resource not found.' });
+        return;
+      }
+      const isAuthorized =
+        actor.role === 'MASTER_ADMIN' ||
+        item.ownerId === actor.id ||
+        (actor.institutionId && item.institutionId === actor.institutionId);
+      if (!isAuthorized) {
+        res.status(403).json({ error: 'You do not have permission to edit this resource.' });
+        return;
+      }
+      if (actor.role !== 'MASTER_ADMIN' && (actor.kycStatus !== 'VERIFIED' || actor.subscriptionStatus !== 'ACTIVE')) {
+        res.status(403).json({ error: 'Contributor account must be verified and active to modify materials.' });
+        return;
+      }
+
+      if (req.body?.title !== undefined) item.title = String(req.body.title).trim() || item.title;
+      if (req.body?.description !== undefined) item.description = String(req.body.description).trim() || item.description;
+      if (req.body?.type !== undefined) item.type = String(req.body.type) as ResourceType;
+      if (req.body?.subject !== undefined) item.subject = String(req.body.subject).trim() || item.subject;
+      if (req.body?.educationLevel !== undefined) item.educationLevel = String(req.body.educationLevel).trim();
+      if (req.body?.accessTier !== undefined) item.accessTier = String(req.body.accessTier) as AccessTier;
+      if (req.body?.priceUsd !== undefined || req.body?.accessTier !== undefined) {
+        item.priceUsd = item.accessTier === 'PAID_SINGLE' ? Math.max(1, Number(req.body?.priceUsd ?? item.priceUsd) || 10) : 0;
+      }
+      if (req.body?.downloadable !== undefined) {
+        item.downloadable = req.body.downloadable !== 'false' && req.body.downloadable !== false;
+      }
+      if (req.body?.previewSummary !== undefined) {
+        item.previewSummary = String(req.body.previewSummary).trim() || item.description;
+      }
+      if (actor.role === 'MASTER_ADMIN' && req.body?.status !== undefined) {
+        item.status = req.body.status === 'SUSPENDED' ? 'SUSPENDED' : 'PUBLISHED';
+      }
+      if (req.file) {
+        safeDeleteUploadedFile(item.filePath);
+        const sizeKb = Math.max(1, Math.round(req.file.size / 1024));
+        item.fileName = req.file.originalname;
+        item.fileSizeLabel = sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
+        item.filePath = req.file.filename;
+        item.mimeType = req.file.mimetype;
+      }
+
+      logAudit(actor, 'RESOURCE_UPDATED', 'RESOURCE', item.id, `${actor.name} updated "${item.title}".`);
+      persist();
+      res.json({ resource: { ...item, filePath: undefined } });
+    }
+  );
+
+  app.delete(
+    '/api/resources/:id',
+    requireAuth,
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const actor = req.authUser!;
+      const item = db.resources.find((r) => r.id === req.params.id);
+      if (!item) {
+        res.status(404).json({ error: 'Resource not found.' });
+        return;
+      }
+      const isAuthorized =
+        actor.role === 'MASTER_ADMIN' ||
+        item.ownerId === actor.id ||
+        (actor.institutionId && item.institutionId === actor.institutionId);
+      if (!isAuthorized) {
+        res.status(403).json({ error: 'You do not have permission to delete this resource.' });
+        return;
+      }
+
+      safeDeleteUploadedFile(item.filePath);
+      db.resources = db.resources.filter((r) => r.id !== item.id);
+      for (const c of db.courses) {
+        c.resourceIds = c.resourceIds.filter((rid) => rid !== item.id);
+      }
+      for (const s of db.liveSessions) {
+        s.pinnedResourceIds = s.pinnedResourceIds.filter((rid) => rid !== item.id);
+      }
+      logAudit(actor, 'RESOURCE_DELETED', 'RESOURCE', item.id, `${actor.name} deleted "${item.title}".`);
+      persist();
+      res.json({ deletedId: item.id });
+    }
+  );
+
   app.post(
     '/api/contributor/courses',
     requireAuth,
-    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN'),
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
     (req: AuthedRequest, res) => {
       const user = req.authUser!;
-      if (user.kycStatus !== 'VERIFIED' || user.subscriptionStatus !== 'ACTIVE') {
+      if (user.role !== 'MASTER_ADMIN' && (user.kycStatus !== 'VERIFIED' || user.subscriptionStatus !== 'ACTIVE')) {
         res.status(403).json({
           error: 'Course creation requires Verified KYC and an Active subscription.',
         });
@@ -1345,6 +1757,82 @@ async function startServer() {
     }
   );
 
+  app.patch(
+    '/api/courses/:id',
+    requireAuth,
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const actor = req.authUser!;
+      const course = db.courses.find((c) => c.id === req.params.id);
+      if (!course) {
+        res.status(404).json({ error: 'Course not found.' });
+        return;
+      }
+      const isAuthorized =
+        actor.role === 'MASTER_ADMIN' ||
+        course.ownerId === actor.id ||
+        (actor.institutionId && course.institutionId === actor.institutionId);
+      if (!isAuthorized) {
+        res.status(403).json({ error: 'You do not have permission to edit this course.' });
+        return;
+      }
+
+      if (req.body?.title !== undefined) course.title = String(req.body.title).trim() || course.title;
+      if (req.body?.description !== undefined) course.description = String(req.body.description).trim() || course.description;
+      if (req.body?.subject !== undefined) course.subject = String(req.body.subject).trim() || course.subject;
+      if (req.body?.requiredLevel !== undefined) course.requiredLevel = String(req.body.requiredLevel).trim();
+      if (req.body?.accessTier !== undefined) course.accessTier = String(req.body.accessTier) as AccessTier;
+      if (req.body?.priceUsd !== undefined || req.body?.accessTier !== undefined) {
+        course.priceUsd = course.accessTier === 'PAID_SINGLE' ? Math.max(1, Number(req.body?.priceUsd ?? course.priceUsd) || 25) : 0;
+      }
+      if (req.body?.requiresAcademicVerification !== undefined) {
+        course.requiresAcademicVerification = Boolean(req.body.requiresAcademicVerification);
+      }
+      if (req.body?.assignedInstructorId !== undefined) {
+        course.assignedInstructorId = req.body.assignedInstructorId ? String(req.body.assignedInstructorId) : undefined;
+      }
+      if (Array.isArray(req.body?.resourceIds)) {
+        course.resourceIds = req.body.resourceIds.map(String);
+      }
+      if (req.body?.status !== undefined && (req.body.status === 'ACTIVE' || req.body.status === 'PAUSED')) {
+        course.status = req.body.status;
+      }
+
+      logAudit(actor, 'COURSE_UPDATED', 'RESOURCE', course.id, `${actor.name} updated course "${course.title}".`);
+      persist();
+      res.json({ course });
+    }
+  );
+
+  app.delete(
+    '/api/courses/:id',
+    requireAuth,
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const actor = req.authUser!;
+      const course = db.courses.find((c) => c.id === req.params.id);
+      if (!course) {
+        res.status(404).json({ error: 'Course not found.' });
+        return;
+      }
+      const isAuthorized =
+        actor.role === 'MASTER_ADMIN' ||
+        course.ownerId === actor.id ||
+        (actor.institutionId && course.institutionId === actor.institutionId);
+      if (!isAuthorized) {
+        res.status(403).json({ error: 'You do not have permission to delete this course.' });
+        return;
+      }
+
+      db.courses = db.courses.filter((c) => c.id !== course.id);
+      db.enrollments = db.enrollments.filter((e) => e.courseId !== course.id);
+      db.liveSessions = db.liveSessions.filter((s) => s.courseId !== course.id);
+      logAudit(actor, 'COURSE_DELETED', 'RESOURCE', course.id, `${actor.name} deleted course "${course.title}".`);
+      persist();
+      res.json({ deletedId: course.id });
+    }
+  );
+
   app.post(
     '/api/institution/staff',
     requireAuth,
@@ -1403,6 +1891,75 @@ async function startServer() {
       );
       persist();
       res.status(201).json({ staff: toSafeUser(staffUser, null), issuedTempPassword: tempPassword });
+    }
+  );
+
+  app.patch(
+    '/api/institution/staff/:id',
+    requireAuth,
+    requireRole('INSTITUTION_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const actor = req.authUser!;
+      const staff = db.users.find((u) => u.id === req.params.id && u.role === 'COURSE_ADMIN');
+      if (!staff) {
+        res.status(404).json({ error: 'Institution instructor not found.' });
+        return;
+      }
+      if (actor.role !== 'MASTER_ADMIN' && (!actor.institutionId || staff.institutionId !== actor.institutionId)) {
+        res.status(403).json({ error: 'You can only manage instructors inside your institution.' });
+        return;
+      }
+      if (req.body?.name !== undefined) staff.name = String(req.body.name).trim() || staff.name;
+      if (req.body?.specialization !== undefined) {
+        staff.specialization = String(req.body.specialization).trim() || staff.specialization;
+      }
+      if (req.body?.email !== undefined) {
+        const nextEmail = String(req.body.email).trim().toLowerCase();
+        if (nextEmail && !db.users.some((u) => u.id !== staff.id && u.email.toLowerCase() === nextEmail)) {
+          staff.email = nextEmail;
+        }
+      }
+      if (req.body?.subscriptionStatus !== undefined) {
+        const nextSub = String(req.body.subscriptionStatus) as StoredUser['subscriptionStatus'];
+        if (['ACTIVE', 'SUSPENDED', 'INACTIVE'].includes(nextSub)) {
+          staff.subscriptionStatus = nextSub;
+          sendToUser(staff.id, 'subscription:updated', { subscriptionStatus: nextSub });
+        }
+      }
+      if (req.body?.resetPassword && String(req.body.resetPassword).trim().length >= 8) {
+        staff.passwordHash = hashPassword(String(req.body.resetPassword).trim());
+        staff.mustChangePassword = true;
+      }
+      logAudit(actor, 'STAFF_UPDATED', 'USER', staff.id, `${actor.name} updated instructor ${staff.name}.`);
+      persist();
+      res.json({ staff: toSafeUser(staff, null) });
+    }
+  );
+
+  app.delete(
+    '/api/institution/staff/:id',
+    requireAuth,
+    requireRole('INSTITUTION_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const actor = req.authUser!;
+      const staff = db.users.find((u) => u.id === req.params.id && u.role === 'COURSE_ADMIN');
+      if (!staff) {
+        res.status(404).json({ error: 'Institution instructor not found.' });
+        return;
+      }
+      if (actor.role !== 'MASTER_ADMIN' && (!actor.institutionId || staff.institutionId !== actor.institutionId)) {
+        res.status(403).json({ error: 'You can only remove instructors inside your institution.' });
+        return;
+      }
+      for (const c of db.courses) {
+        if (c.assignedInstructorId === staff.id) {
+          c.assignedInstructorId = undefined;
+        }
+      }
+      db.users = db.users.filter((u) => u.id !== staff.id);
+      logAudit(actor, 'STAFF_REMOVED', 'USER', staff.id, `${actor.name} removed instructor ${staff.name}.`);
+      persist();
+      res.json({ deletedId: staff.id });
     }
   );
 
@@ -1496,6 +2053,96 @@ async function startServer() {
     }
   );
 
+  app.patch(
+    '/api/enrollments/:id',
+    requireAuth,
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const actor = req.authUser!;
+      const enrollment = db.enrollments.find((e) => e.id === req.params.id);
+      if (!enrollment) {
+        res.status(404).json({ error: 'Enrollment not found.' });
+        return;
+      }
+      const inScope =
+        actor.role === 'MASTER_ADMIN' ||
+        enrollment.ownerId === actor.id ||
+        (actor.institutionId && enrollment.institutionId === actor.institutionId);
+      if (!inScope) {
+        res.status(403).json({ error: 'You do not manage this student enrollment.' });
+        return;
+      }
+
+      if (req.body?.academicStatus !== undefined) {
+        const nextStatus = String(req.body.academicStatus) as EnrollmentRecord['academicStatus'];
+        if (!['PENDING', 'APPROVED', 'REJECTED'].includes(nextStatus)) {
+          res.status(400).json({ error: 'Invalid academic status.' });
+          return;
+        }
+        if (actor.role !== 'MASTER_ADMIN') {
+          if (enrollment.verifierRoleRequired === 'INSTITUTION_ADMIN' && actor.role !== 'INSTITUTION_ADMIN') {
+            res.status(403).json({ error: 'Only Institution Admin can change academic verification status.' });
+            return;
+          }
+          if (enrollment.verifierRoleRequired === 'SOLO_EDUCATOR' && actor.role !== 'SOLO_EDUCATOR') {
+            res.status(403).json({ error: 'Only owning Solo Educator can change academic verification status.' });
+            return;
+          }
+        }
+        enrollment.academicStatus = nextStatus;
+        enrollment.verifiedAt = nextStatus === 'PENDING' ? undefined : new Date().toISOString();
+        const course = db.courses.find((c) => c.id === enrollment.courseId);
+        if (course) {
+          if (nextStatus === 'APPROVED' && !course.enrolledLearnerIds.includes(enrollment.learnerId)) {
+            course.enrolledLearnerIds.push(enrollment.learnerId);
+          } else if (nextStatus !== 'APPROVED') {
+            course.enrolledLearnerIds = course.enrolledLearnerIds.filter((id) => id !== enrollment.learnerId);
+          }
+        }
+      }
+      if (req.body?.academicNote !== undefined) {
+        enrollment.academicNote = String(req.body.academicNote).trim().slice(0, 300);
+      }
+      if (req.body?.gradeLabel !== undefined) {
+        enrollment.gradeLabel = String(req.body.gradeLabel).trim().slice(0, 20);
+      }
+      if (req.body?.progressPercent !== undefined) {
+        enrollment.progressPercent = Math.max(0, Math.min(100, Number(req.body.progressPercent) || 0));
+      }
+
+      logAudit(actor, 'ENROLLMENT_UPDATED', 'ENROLLMENT', enrollment.id, `${actor.name} updated enrollment for ${enrollment.learnerName}.`);
+      sendToUser(enrollment.learnerId, 'enrollment:updated', { enrollment });
+      persist();
+      res.json({ enrollment });
+    }
+  );
+
+  app.delete('/api/enrollments/:id', requireAuth, (req: AuthedRequest, res) => {
+    const actor = req.authUser!;
+    const enrollment = db.enrollments.find((e) => e.id === req.params.id);
+    if (!enrollment) {
+      res.status(404).json({ error: 'Enrollment not found.' });
+      return;
+    }
+    const isLearnerSelf = enrollment.learnerId === actor.id;
+    const isVerifier =
+      actor.role === 'MASTER_ADMIN' ||
+      enrollment.ownerId === actor.id ||
+      (actor.role === 'INSTITUTION_ADMIN' && actor.institutionId && enrollment.institutionId === actor.institutionId);
+    if (!isLearnerSelf && !isVerifier) {
+      res.status(403).json({ error: 'Not authorized to remove or withdraw this enrollment.' });
+      return;
+    }
+    const course = db.courses.find((c) => c.id === enrollment.courseId);
+    if (course) {
+      course.enrolledLearnerIds = course.enrolledLearnerIds.filter((id) => id !== enrollment.learnerId);
+    }
+    db.enrollments = db.enrollments.filter((e) => e.id !== enrollment.id);
+    logAudit(actor, 'ENROLLMENT_REMOVED', 'ENROLLMENT', enrollment.id, `${actor.name} removed/withdrew enrollment for ${enrollment.courseTitle}.`);
+    persist();
+    res.json({ deletedId: enrollment.id });
+  });
+
   // ---------------- LEARNER WORKSPACE & MONETIZATION ----------------
   app.get('/api/learner/workspace', requireAuth, (req: AuthedRequest, res) => {
     const user = req.authUser!;
@@ -1545,6 +2192,56 @@ async function startServer() {
       });
     }
   );
+
+  app.patch(
+    '/api/learner/academic-docs/:id',
+    requireAuth,
+    upload.single('document'),
+    (req: AuthedRequest, res) => {
+      const user = req.authUser!;
+      const doc = db.learnerAcademicDocs.find((d) => d.id === req.params.id);
+      if (!doc) {
+        res.status(404).json({ error: 'Academic document not found.' });
+        return;
+      }
+      if (user.role !== 'MASTER_ADMIN' && doc.learnerId !== user.id) {
+        res.status(403).json({ error: 'You do not have permission to edit this document.' });
+        return;
+      }
+      if (req.body?.title !== undefined) doc.title = String(req.body.title).trim() || doc.title;
+      if (req.body?.educationLevel !== undefined) {
+        doc.educationLevel = String(req.body.educationLevel).trim() || doc.educationLevel;
+      }
+      if (req.body?.institutionIssued !== undefined) {
+        doc.institutionIssued = String(req.body.institutionIssued).trim() || doc.institutionIssued;
+      }
+      if (req.file) {
+        safeDeleteUploadedFile(doc.filePath);
+        doc.fileName = req.file.originalname;
+        doc.filePath = req.file.filename;
+      }
+      persist();
+      res.json({ doc: { ...doc, filePath: undefined } });
+    }
+  );
+
+  app.delete('/api/learner/academic-docs/:id', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const doc = db.learnerAcademicDocs.find((d) => d.id === req.params.id);
+    if (!doc) {
+      res.status(404).json({ error: 'Academic document not found.' });
+      return;
+    }
+    if (user.role !== 'MASTER_ADMIN' && doc.learnerId !== user.id) {
+      res.status(403).json({ error: 'You do not have permission to delete this document.' });
+      return;
+    }
+    safeDeleteUploadedFile(doc.filePath);
+    db.learnerAcademicDocs = db.learnerAcademicDocs.filter((d) => d.id !== doc.id);
+    logAudit(user, 'ACADEMIC_DOC_DELETED', 'USER', doc.learnerId, `${user.name} deleted academic doc "${doc.title}".`);
+    persist();
+    res.json({ deletedId: doc.id });
+  });
 
   app.post('/api/learner/follow/:creatorId', requireAuth, (req: AuthedRequest, res) => {
     const user = req.authUser!;
@@ -1615,6 +2312,17 @@ async function startServer() {
         creatorNetUsd: 0,
         timestamp: new Date().toISOString(),
       });
+      persist();
+      res.json({ user: toSafeUser(user, user) });
+      return;
+    }
+
+    if (kind === 'CANCEL_PLATFORM_PASS') {
+      user.platformPassActive = false;
+      if (user.subscriptionPlan === 'AKADEMI_PASS') {
+        user.subscriptionPlan = undefined;
+        user.subscriptionStatus = 'INACTIVE';
+      }
       persist();
       res.json({ user: toSafeUser(user, user) });
       return;
@@ -1772,6 +2480,7 @@ async function startServer() {
     const user = req.authUser!;
     const courseId = String(req.body?.courseId || '');
     const resourceId = String(req.body?.resourceId || '');
+    const completed = req.body?.completed !== false;
     const enrollment = db.enrollments.find(
       (e) => e.courseId === courseId && e.learnerId === user.id && e.academicStatus === 'APPROVED'
     );
@@ -1780,8 +2489,12 @@ async function startServer() {
       res.status(404).json({ error: 'Approved enrollment not found.' });
       return;
     }
-    if (!enrollment.completedResourceIds.includes(resourceId)) {
-      enrollment.completedResourceIds.push(resourceId);
+    if (completed) {
+      if (!enrollment.completedResourceIds.includes(resourceId)) {
+        enrollment.completedResourceIds.push(resourceId);
+      }
+    } else {
+      enrollment.completedResourceIds = enrollment.completedResourceIds.filter((id) => id !== resourceId);
     }
     const total = Math.max(1, course.resourceIds.length);
     enrollment.progressPercent = Math.min(
@@ -1964,10 +2677,10 @@ async function startServer() {
   app.post(
     '/api/sessions',
     requireAuth,
-    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN'),
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
     (req: AuthedRequest, res) => {
       const user = req.authUser!;
-      if (user.kycStatus !== 'VERIFIED' || user.subscriptionStatus !== 'ACTIVE') {
+      if (user.role !== 'MASTER_ADMIN' && (user.kycStatus !== 'VERIFIED' || user.subscriptionStatus !== 'ACTIVE')) {
         res.status(403).json({
           error: 'Live session hosting requires Verified KYC and an Active subscription.',
         });
@@ -1999,7 +2712,7 @@ async function startServer() {
         courseTitle: course.title,
         hostId: user.id,
         hostName: user.institutionName ? `${user.name} (${user.institutionName})` : user.name,
-        institutionId: user.institutionId,
+        institutionId: user.institutionId || course.institutionId,
         title,
         topicSummary: topicSummary || `Live class for ${course.title}`,
         scheduledAt,
@@ -2020,6 +2733,70 @@ async function startServer() {
       db.liveSessions.unshift(session);
       persist();
       res.status(201).json({ session });
+    }
+  );
+
+  app.patch(
+    '/api/sessions/:id',
+    requireAuth,
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const user = req.authUser!;
+      const session = db.liveSessions.find((s) => s.id === req.params.id);
+      if (!session) {
+        res.status(404).json({ error: 'Live session not found.' });
+        return;
+      }
+      const isAuthorized =
+        user.role === 'MASTER_ADMIN' ||
+        session.hostId === user.id ||
+        (user.institutionId && session.institutionId === user.institutionId);
+      if (!isAuthorized) {
+        res.status(403).json({ error: 'You do not have permission to edit this live session.' });
+        return;
+      }
+      if (req.body?.title !== undefined) session.title = String(req.body.title).trim() || session.title;
+      if (req.body?.topicSummary !== undefined) session.topicSummary = String(req.body.topicSummary).trim();
+      if (req.body?.scheduledAt !== undefined) session.scheduledAt = String(req.body.scheduledAt);
+      if (req.body?.durationMinutes !== undefined) session.durationMinutes = Math.max(15, Number(req.body.durationMinutes) || 60);
+      if (req.body?.accessRule !== undefined) session.accessRule = String(req.body.accessRule) as LiveSession['accessRule'];
+      if (req.body?.status !== undefined && ['SCHEDULED', 'LIVE', 'ENDED'].includes(String(req.body.status))) {
+        session.status = String(req.body.status) as LiveSession['status'];
+        broadcastToSession(session.id, 'session:status', { status: session.status });
+      }
+      if (Array.isArray(req.body?.pinnedResourceIds)) {
+        session.pinnedResourceIds = req.body.pinnedResourceIds.map(String);
+      }
+      logAudit(user, 'SESSION_UPDATED', 'SESSION', session.id, `${user.name} updated session "${session.title}".`);
+      persist();
+      res.json({ session });
+    }
+  );
+
+  app.delete(
+    '/api/sessions/:id',
+    requireAuth,
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const user = req.authUser!;
+      const session = db.liveSessions.find((s) => s.id === req.params.id);
+      if (!session) {
+        res.status(404).json({ error: 'Live session not found.' });
+        return;
+      }
+      const isAuthorized =
+        user.role === 'MASTER_ADMIN' ||
+        session.hostId === user.id ||
+        (user.institutionId && session.institutionId === user.institutionId);
+      if (!isAuthorized) {
+        res.status(403).json({ error: 'You do not have permission to delete this live session.' });
+        return;
+      }
+      broadcastToSession(session.id, 'session:status', { status: 'ENDED' });
+      db.liveSessions = db.liveSessions.filter((s) => s.id !== session.id);
+      logAudit(user, 'SESSION_DELETED', 'SESSION', session.id, `${user.name} deleted session "${session.title}".`);
+      persist();
+      res.json({ deletedId: session.id });
     }
   );
 
@@ -2245,6 +3022,153 @@ async function startServer() {
       body,
       timestamp: new Date().toISOString(),
     });
+    persist();
+    res.json({ thread });
+  });
+
+  // Ticket edit/delete and message edit/delete
+  app.patch('/api/tickets/:id', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const ticket = db.tickets.find((t) => t.id === req.params.id);
+    if (!ticket) {
+      res.status(404).json({ error: 'Support ticket not found.' });
+      return;
+    }
+    if (user.role !== 'MASTER_ADMIN' && ticket.userId !== user.id) {
+      res.status(403).json({ error: 'Access denied to edit this support ticket.' });
+      return;
+    }
+    if (req.body?.subject !== undefined) ticket.subject = String(req.body.subject).trim() || ticket.subject;
+    if (req.body?.category !== undefined) ticket.category = String(req.body.category) as SupportTicket['category'];
+    if (user.role === 'MASTER_ADMIN' && req.body?.status !== undefined) {
+      ticket.status = String(req.body.status) as SupportTicket['status'];
+    }
+    persist();
+    res.json({ ticket });
+  });
+
+  app.delete('/api/tickets/:id', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const ticket = db.tickets.find((t) => t.id === req.params.id);
+    if (!ticket) {
+      res.status(404).json({ error: 'Support ticket not found.' });
+      return;
+    }
+    if (user.role !== 'MASTER_ADMIN' && ticket.userId !== user.id) {
+      res.status(403).json({ error: 'Access denied to delete this support ticket.' });
+      return;
+    }
+    db.tickets = db.tickets.filter((t) => t.id !== ticket.id);
+    persist();
+    res.json({ deletedId: ticket.id });
+  });
+
+  app.patch('/api/tickets/:ticketId/messages/:msgId', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const ticket = db.tickets.find((t) => t.id === req.params.ticketId);
+    if (!ticket) {
+      res.status(404).json({ error: 'Support ticket not found.' });
+      return;
+    }
+    const msg = ticket.messages.find((m) => m.id === req.params.msgId);
+    if (!msg) {
+      res.status(404).json({ error: 'Message not found.' });
+      return;
+    }
+    if (user.role !== 'MASTER_ADMIN' && msg.senderId !== user.id) {
+      res.status(403).json({ error: 'You can only edit your own messages.' });
+      return;
+    }
+    const body = String(req.body?.body || '').trim();
+    if (!body) {
+      res.status(400).json({ error: 'Message body cannot be empty.' });
+      return;
+    }
+    msg.body = body;
+    persist();
+    res.json({ ticket });
+  });
+
+  app.delete('/api/tickets/:ticketId/messages/:msgId', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const ticket = db.tickets.find((t) => t.id === req.params.ticketId);
+    if (!ticket) {
+      res.status(404).json({ error: 'Support ticket not found.' });
+      return;
+    }
+    const msg = ticket.messages.find((m) => m.id === req.params.msgId);
+    if (!msg) {
+      res.status(404).json({ error: 'Message not found.' });
+      return;
+    }
+    if (user.role !== 'MASTER_ADMIN' && msg.senderId !== user.id) {
+      res.status(403).json({ error: 'You can only delete your own messages.' });
+      return;
+    }
+    ticket.messages = ticket.messages.filter((m) => m.id !== msg.id);
+    persist();
+    res.json({ ticket });
+  });
+
+  app.delete('/api/messages/:id', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const thread = db.messageThreads.find((t) => t.id === req.params.id);
+    if (!thread) {
+      res.status(404).json({ error: 'Thread not found.' });
+      return;
+    }
+    if (user.role !== 'MASTER_ADMIN' && !thread.participantIds.includes(user.id)) {
+      res.status(403).json({ error: 'Access denied to delete this conversation.' });
+      return;
+    }
+    db.messageThreads = db.messageThreads.filter((t) => t.id !== thread.id);
+    persist();
+    res.json({ deletedId: thread.id });
+  });
+
+  app.patch('/api/messages/:threadId/messages/:msgId', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const thread = db.messageThreads.find((t) => t.id === req.params.threadId);
+    if (!thread) {
+      res.status(404).json({ error: 'Thread not found.' });
+      return;
+    }
+    const msg = thread.messages.find((m) => m.id === req.params.msgId);
+    if (!msg) {
+      res.status(404).json({ error: 'Message not found.' });
+      return;
+    }
+    if (user.role !== 'MASTER_ADMIN' && msg.senderId !== user.id) {
+      res.status(403).json({ error: 'You can only edit your own messages.' });
+      return;
+    }
+    const body = String(req.body?.body || '').trim();
+    if (!body) {
+      res.status(400).json({ error: 'Message body cannot be empty.' });
+      return;
+    }
+    msg.body = body;
+    persist();
+    res.json({ thread });
+  });
+
+  app.delete('/api/messages/:threadId/messages/:msgId', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const thread = db.messageThreads.find((t) => t.id === req.params.threadId);
+    if (!thread) {
+      res.status(404).json({ error: 'Thread not found.' });
+      return;
+    }
+    const msg = thread.messages.find((m) => m.id === req.params.msgId);
+    if (!msg) {
+      res.status(404).json({ error: 'Message not found.' });
+      return;
+    }
+    if (user.role !== 'MASTER_ADMIN' && msg.senderId !== user.id) {
+      res.status(403).json({ error: 'You can only delete your own messages.' });
+      return;
+    }
+    thread.messages = thread.messages.filter((m) => m.id !== msg.id);
     persist();
     res.json({ thread });
   });
