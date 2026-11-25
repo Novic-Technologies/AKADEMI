@@ -1,0 +1,6 @@
+{
+  "name": "Akademi",
+  "description": "Verified academic resource platform, structured courses, and live classrooms across Africa.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

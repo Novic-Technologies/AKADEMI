@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Bricolage Grotesque', 'Plus Jakarta Sans', 'Noto Sans Arabic', system-ui, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', 'Noto Sans Arabic', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    /* Systematic minimal-white African academic palette anchored to the brand emblem (#0C1B2E) */
+    --bg-papyrus: #EFECE3;
+    --bg-sand: #E6E0D3;
+    --surface-stone: #F6F3EB;
+    --border-warm: #D4CCB9;
+    --ink-indigo: #0C1B2E;
+    --ink-slate: #2D3D50;
+    --ink-muted: #55514A;
+    --accent-terracotta: #A44A1C;
+    --accent-forest: #1E5631;
+  }
+
+  html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.65;
+    color: var(--ink-indigo);
+    background-color: var(--bg-papyrus);
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  .font-mono-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+/* Subtle architectural African geometric border rhythm (no flashy gradients) */
+.african-weave-rule {
+  height: 6px;
+  width: 100%;
+  background-image: repeating-linear-gradient(
+    90deg,
+    #0C1B2E 0px,
+    #0C1B2E 18px,
+    #EFECE3 18px,
+    #EFECE3 22px,
+    #A44A1C 22px,
+    #A44A1C 34px,
+    #EFECE3 34px,
+    #EFECE3 38px,
+    #1E5631 38px,
+    #1E5631 48px,
+    #EFECE3 48px,
+    #EFECE3 52px
+  );
+}
