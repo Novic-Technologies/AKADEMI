@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Award,
   BookOpen,
   CheckCircle2,
   CreditCard,
@@ -34,8 +35,10 @@ import type {
 } from '../types/akademi';
 import { CommunicationPanel } from './CommunicationPanel';
 import { ContentInspectorModal, type InspectedContent } from './ContentInspectorModal';
+import { CourseQaPanel } from './CourseQaPanel';
 import { DashboardShell } from './DashboardShell';
 import { LiveClassroomModal } from './LiveClassroomModal';
+import { QuizManagerModal } from './QuizManagerModal';
 
 interface ContributorDashboardProps {
   currentUser: UserProfile;
@@ -129,6 +132,8 @@ export const ContributorDashboard: React.FC<ContributorDashboardProps> = ({
   const [crsResourceIds, setCrsResourceIds] = useState<string[]>([]);
   const [viewingCourse, setViewingCourse] = useState<CourseItem | null>(null);
   const [editingCourse, setEditingCourse] = useState<CourseItem | null>(null);
+  const [managingQuizCourse, setManagingQuizCourse] = useState<CourseItem | null>(null);
+  const [qaCourseModal, setQaCourseModal] = useState<CourseItem | null>(null);
 
   // Student enrollment edit modal
   const [editingEnrollment, setEditingEnrollment] = useState<EnrichedEnrollment | null>(null);
@@ -1445,6 +1450,20 @@ export const ContributorDashboard: React.FC<ContributorDashboardProps> = ({
                       </button>
                       <button
                         type="button"
+                        onClick={() => setManagingQuizCourse(c)}
+                        className={btnSecondary}
+                      >
+                        <GraduationCap className="h-3.5 w-3.5" /> Quizzes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQaCourseModal(c)}
+                        className={btnSecondary}
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" /> Q&amp;A
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setEditingCourse({ ...c })}
                         className={btnSecondary}
                       >
@@ -1536,6 +1555,11 @@ export const ContributorDashboard: React.FC<ContributorDashboardProps> = ({
                             <span>Progress: {enr.progressPercent}%</span>
                             <span>Live Attendance: {enr.attendanceMinutes} min</span>
                             <span>Grade: {enr.gradeLabel || 'Unassigned'}</span>
+                            {enr.certificateCode && (
+                              <span className="text-[var(--ak-ok-fg)] font-semibold">
+                                Cert: {enr.certificateCode}
+                              </span>
+                            )}
                           </div>
                           {enr.academicNote && (
                             <p className="text-xs text-[var(--ak-muted)]">Note: {enr.academicNote}</p>
@@ -1640,6 +1664,22 @@ export const ContributorDashboard: React.FC<ContributorDashboardProps> = ({
                             )}
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
+                            {enr.certificateId && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleInspectFile(`/api/files/certificate/${enr.certificateId}`, {
+                                    title: `Certificate — ${enr.courseTitle}`,
+                                    subtitle: `${enr.learnerName} · ${enr.certificateCode || ''}`,
+                                    fileName: `${enr.certificateCode || enr.certificateId}.pdf`,
+                                  })
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-600"
+                              >
+                                <Award className="h-3.5 w-3.5" />
+                                Inspect Certificate
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => setEditingEnrollment({ ...enr })}
@@ -2099,6 +2139,11 @@ export const ContributorDashboard: React.FC<ContributorDashboardProps> = ({
             currentUser={currentUser}
             defaultTab={isUnlocked ? 'THREADS' : 'SUPPORT'}
             initialRecipientId={messageRecipientId}
+            qaCourses={courses.map((c) => ({
+              id: c.id,
+              title: c.title,
+              subject: c.subject,
+            }))}
             availableRecipients={messageRecipients}
           />
         )}
@@ -2809,6 +2854,32 @@ export const ContributorDashboard: React.FC<ContributorDashboardProps> = ({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {managingQuizCourse && (
+        <QuizManagerModal
+          course={managingQuizCourse}
+          onClose={() => setManagingQuizCourse(null)}
+        />
+      )}
+
+      {qaCourseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ak-backdrop)] p-4 backdrop-blur-xs">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[var(--ak-border)] bg-[var(--ak-canvas)] p-5 shadow-2xl">
+            <CourseQaPanel
+              currentUser={currentUser}
+              courses={[
+                {
+                  id: qaCourseModal.id,
+                  title: qaCourseModal.title,
+                  subject: qaCourseModal.subject,
+                },
+              ]}
+              initialCourseId={qaCourseModal.id}
+              onClose={() => setQaCourseModal(null)}
+            />
+          </div>
         </div>
       )}
 

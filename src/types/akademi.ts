@@ -168,6 +168,8 @@ export interface EnrollmentRecord {
   completedResourceIds: string[];
   attendanceMinutes: number;
   gradeLabel?: string;
+  certificateId?: string;
+  certificateCode?: string;
   requestedAt: string;
   verifiedAt?: string;
 }
@@ -181,6 +183,47 @@ export interface LiveChatMessage {
   isQuestion?: boolean;
   approvedForQa?: boolean;
   timestamp: string;
+}
+
+export interface WhiteboardPoint {
+  x: number;
+  y: number;
+}
+
+export interface WhiteboardStroke {
+  id: string;
+  userId: string;
+  userName: string;
+  tool: 'PEN' | 'HIGHLIGHTER' | 'TEXT';
+  color: string;
+  width: number;
+  points: WhiteboardPoint[];
+  text?: string;
+  createdAt: string;
+}
+
+export interface BoardPointerState {
+  x: number;
+  y: number;
+  userId: string;
+  userName: string;
+  active: boolean;
+}
+
+export interface LivePollOption {
+  id: string;
+  text: string;
+  voterIds: string[];
+}
+
+export interface LivePoll {
+  id: string;
+  question: string;
+  options: LivePollOption[];
+  createdById: string;
+  createdByName: string;
+  isOpen: boolean;
+  createdAt: string;
 }
 
 export interface LiveSession {
@@ -205,6 +248,131 @@ export interface LiveSession {
   kickedUserIds: string[];
   attendanceLog: Record<string, { name: string; joinedAt: string; minutes: number }>;
   chatMessages: LiveChatMessage[];
+  whiteboardStrokes?: WhiteboardStroke[];
+  boardPointer?: BoardPointerState | null;
+  polls?: LivePoll[];
+}
+
+export interface CourseQaReply {
+  id: string;
+  threadId: string;
+  authorId: string;
+  authorName: string;
+  authorRole: UserRole;
+  body: string;
+  mentions: string[];
+  upvoterIds: string[];
+  isInstructorVerified: boolean;
+  verifiedByName?: string;
+  createdAt: string;
+}
+
+export interface CourseQaThread {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  authorId: string;
+  authorName: string;
+  authorRole: UserRole;
+  title: string;
+  body: string;
+  mentions: string[];
+  upvoterIds: string[];
+  isPinned: boolean;
+  isOfficeHour?: boolean;
+  officeHourSlot?: string;
+  createdAt: string;
+  updatedAt: string;
+  replies: CourseQaReply[];
+}
+
+export interface CertificateRecord {
+  id: string;
+  certificateCode: string;
+  enrollmentId: string;
+  courseId: string;
+  courseTitle: string;
+  subject: string;
+  educationLevel: string;
+  learnerId: string;
+  learnerName: string;
+  issuerId: string;
+  issuerName: string;
+  institutionName?: string;
+  gradeLabel?: string;
+  attendanceMinutes: number;
+  issuedAt: string;
+  revoked?: boolean;
+}
+
+export type QuizCurriculumTag =
+  | 'UNEB PLE'
+  | 'UNEB UCE'
+  | 'UNEB UACE'
+  | 'UBTEB'
+  | 'NCHE'
+  | 'KCSE'
+  | 'WASSCE'
+  | 'GENERAL';
+
+export interface QuizQuestion {
+  id: string;
+  prompt: string;
+  kind: 'MCQ' | 'STRUCTURED';
+  options?: string[];
+  correctOptionIndex?: number;
+  acceptedKeywords?: string[];
+  sampleAnswer?: string;
+  workedSolution: string;
+  marks: number;
+}
+
+export interface QuizItem {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  ownerId: string;
+  ownerName: string;
+  title: string;
+  curriculumTag: QuizCurriculumTag;
+  description: string;
+  timeLimitMinutes: number;
+  passingPercent: number;
+  isPastPaper: boolean;
+  published: boolean;
+  createdAt: string;
+  questions: QuizQuestion[];
+}
+
+export interface QuizQuestionResult {
+  questionId: string;
+  prompt?: string;
+  kind?: 'MCQ' | 'STRUCTURED';
+  earnedMarks: number;
+  maxMarks: number;
+  isCorrect: boolean;
+  submittedAnswer?: string;
+  correctAnswer?: string;
+  matchedKeywords?: string[];
+  workedSolution: string;
+  correctAnswerDisplay: string;
+}
+
+export interface QuizAttempt {
+  id: string;
+  quizId: string;
+  courseId: string;
+  learnerId: string;
+  learnerName: string;
+  answers: Record<string, string | number>;
+  scoreEarned: number;
+  totalMarks: number;
+  percentScore: number;
+  passed: boolean;
+  gradeLabel: string;
+  questionResults: QuizQuestionResult[];
+  submittedAt: string;
+  durationSeconds: number;
 }
 
 export interface SupportTicket {
@@ -264,7 +432,7 @@ export interface AuditLogEntry {
   actorId: string;
   actorName: string;
   action: string;
-  targetType: 'USER' | 'REQUEST' | 'KYC' | 'SUBSCRIPTION' | 'RESOURCE' | 'ENROLLMENT' | 'SESSION';
+  targetType: 'USER' | 'REQUEST' | 'KYC' | 'SUBSCRIPTION' | 'RESOURCE' | 'ENROLLMENT' | 'SESSION' | 'COURSE';
   targetId: string;
   details: string;
   timestamp: string;

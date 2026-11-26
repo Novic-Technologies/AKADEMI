@@ -307,3 +307,252 @@ export function buildPdfDocumentBuffer(spec: PdfDocumentSpec): Buffer {
 
   return Buffer.concat(chunks);
 }
+
+import QRCode from 'qrcode';
+
+export interface CertificatePdfSpec {
+  certificateCode: string;
+  learnerName: string;
+  courseTitle: string;
+  subject: string;
+  educationLevel: string;
+  issuerName: string;
+  institutionName?: string;
+  gradeLabel?: string;
+  attendanceMinutes: number;
+  issuedAt: string;
+  verifyUrl: string;
+}
+
+export function buildCertificatePdfBuffer(spec: CertificatePdfSpec): Buffer {
+  // Landscape Letter: 792 x 612 pt
+  const PAGE_W = 792;
+  const PAGE_H = 612;
+  const cmds: string[] = [];
+
+  // Papyrus cream background
+  cmds.push('0.973 0.961 0.933 rg');
+  cmds.push(`0 0 ${PAGE_W} ${PAGE_H} re f`);
+
+  // Outer indigo border frame
+  cmds.push('0.047 0.106 0.180 RG');
+  cmds.push('4 w');
+  cmds.push(`24 24 ${PAGE_W - 48} ${PAGE_H - 48} re S`);
+
+  // Inner terracotta accent border frame
+  cmds.push('0.788 0.392 0.180 RG');
+  cmds.push('1.2 w');
+  cmds.push(`34 34 ${PAGE_W - 68} ${PAGE_H - 68} re S`);
+
+  // Top indigo seal banner
+  cmds.push('0.047 0.106 0.180 rg');
+  cmds.push(`34 ${PAGE_H - 94} ${PAGE_W - 68} 60 re f`);
+  cmds.push('0.788 0.392 0.180 rg');
+  cmds.push(`34 ${PAGE_H - 98} ${PAGE_W - 68} 4 re f`);
+
+  // Header Typography
+  cmds.push('BT');
+  cmds.push('/F2 13 Tf');
+  cmds.push('0.96 0.94 0.90 rg');
+  cmds.push(`1 0 0 1 60 ${PAGE_H - 62} Tm`);
+  cmds.push(`(${escapePdfString('AKADEMI VERIFIED ACADEMIC PLATFORM')}) Tj`);
+  cmds.push('/F1 9.5 Tf');
+  cmds.push('0.86 0.89 0.94 rg');
+  cmds.push(`1 0 0 1 60 ${PAGE_H - 78} Tm`);
+  cmds.push(
+    `(${escapePdfString(
+      spec.institutionName
+        ? `Issued in partnership with ${spec.institutionName}`
+        : 'Pan-African Verified Academic Credential Registry'
+    )}) Tj`
+  );
+  cmds.push('/F3 10 Tf');
+  cmds.push('0.96 0.94 0.90 rg');
+  cmds.push(`1 0 0 1 ${PAGE_W - 225} ${PAGE_H - 68} Tm`);
+  cmds.push(`(${escapePdfString(`ID: ${spec.certificateCode}`)}) Tj`);
+  cmds.push('ET');
+
+  // Certificate Main Title
+  cmds.push('BT');
+  cmds.push('/F2 26 Tf');
+  cmds.push('0.047 0.106 0.180 rg');
+  cmds.push(`1 0 0 1 60 ${PAGE_H - 150} Tm`);
+  cmds.push(`(${escapePdfString('CERTIFICATE OF COMPLETION')}) Tj`);
+
+  cmds.push('/F1 11.5 Tf');
+  cmds.push('0.36 0.38 0.42 rg');
+  cmds.push(`1 0 0 1 60 ${PAGE_H - 184} Tm`);
+  cmds.push(`(${escapePdfString('THIS ACADEMIC CREDENTIAL CERTIFIES THAT')}) Tj`);
+
+  // Learner Name
+  cmds.push('/F2 28 Tf');
+  cmds.push('0.643 0.290 0.110 rg');
+  cmds.push(`1 0 0 1 60 ${PAGE_H - 224} Tm`);
+  cmds.push(`(${escapePdfString(spec.learnerName)}) Tj`);
+  cmds.push('ET');
+
+  // Underline under learner name
+  cmds.push('0.80 0.76 0.68 RG');
+  cmds.push('0.9 w');
+  cmds.push(`60 ${PAGE_H - 236} m 540 ${PAGE_H - 236} l S`);
+
+  // Course Title & Narrative
+  cmds.push('BT');
+  cmds.push('/F1 12 Tf');
+  cmds.push('0.18 0.24 0.31 rg');
+  cmds.push(`1 0 0 1 60 ${PAGE_H - 266} Tm`);
+  cmds.push(
+    `(${escapePdfString(
+      'has fulfilled all curriculum requirements, assessments, and 100% syllabus completion for:'
+    )}) Tj`
+  );
+  cmds.push('ET');
+
+  const courseLines = wrapText(spec.courseTitle, 52);
+  let cy = PAGE_H - 302;
+  for (const line of courseLines.slice(0, 2)) {
+    cmds.push('BT');
+    cmds.push('/F2 18 Tf');
+    cmds.push('0.047 0.106 0.180 rg');
+    cmds.push(`1 0 0 1 60 ${cy} Tm`);
+    cmds.push(`(${escapePdfString(line)}) Tj`);
+    cmds.push('ET');
+    cy -= 24;
+  }
+
+  // Details Card
+  cmds.push('0.935 0.918 0.878 rg');
+  cmds.push(`60 ${PAGE_H - 425} 480 86 re f`);
+  cmds.push('0.80 0.76 0.68 RG');
+  cmds.push('0.8 w');
+  cmds.push(`60 ${PAGE_H - 425} 480 86 re S`);
+
+  const issuedDateStr = new Date(spec.issuedAt).toUTCString().replace(' GMT', ' UTC');
+  const detailRows = [
+    ['Subject & Level:', `${spec.subject} | ${spec.educationLevel}`],
+    ['Verified Grade:', `${spec.gradeLabel || 'Passed (100% Completed)'} | Attendance: ${spec.attendanceMinutes} min`],
+    ['Course Instructor:', spec.issuerName],
+    ['Date Issued:', issuedDateStr],
+  ];
+  let dy = PAGE_H - 358;
+  for (const [k, v] of detailRows) {
+    cmds.push('BT');
+    cmds.push('/F2 9.5 Tf');
+    cmds.push('0.22 0.27 0.34 rg');
+    cmds.push(`1 0 0 1 74 ${dy} Tm`);
+    cmds.push(`(${escapePdfString(k)}) Tj`);
+    cmds.push('/F1 9.5 Tf');
+    cmds.push('0.047 0.106 0.180 rg');
+    cmds.push(`1 0 0 1 190 ${dy} Tm`);
+    cmds.push(`(${escapePdfString(v)}) Tj`);
+    cmds.push('ET');
+    dy -= 18;
+  }
+
+  // Real Vector QR Code Block on Right
+  const qrBoxX = 582;
+  const qrBoxY = PAGE_H - 385;
+  const qrDrawSize = 140;
+  try {
+    const qr = QRCode.create(spec.verifyUrl, { errorCorrectionLevel: 'M' });
+    const count = qr.modules.size;
+    const modSize = qrDrawSize / count;
+
+    // White quiet zone
+    cmds.push('1 1 1 rg');
+    cmds.push(`${qrBoxX - 10} ${qrBoxY - 10} ${qrDrawSize + 20} ${qrDrawSize + 20} re f`);
+    cmds.push('0.80 0.76 0.68 RG');
+    cmds.push('0.8 w');
+    cmds.push(`${qrBoxX - 10} ${qrBoxY - 10} ${qrDrawSize + 20} ${qrDrawSize + 20} re S`);
+
+    cmds.push('0.047 0.106 0.180 rg');
+    for (let r = 0; r < count; r += 1) {
+      for (let c = 0; c < count; c += 1) {
+        if (qr.modules.get(r, c)) {
+          const rx = qrBoxX + c * modSize;
+          const ry = qrBoxY + (count - 1 - r) * modSize;
+          cmds.push(`${rx.toFixed(2)} ${ry.toFixed(2)} ${modSize.toFixed(2)} ${modSize.toFixed(2)} re f`);
+        }
+      }
+    }
+  } catch {
+    // Fallback bordered seal frame if QR fails
+    cmds.push('1 1 1 rg');
+    cmds.push(`${qrBoxX} ${qrBoxY} ${qrDrawSize} ${qrDrawSize} re f`);
+  }
+
+  cmds.push('BT');
+  cmds.push('/F2 9 Tf');
+  cmds.push('0.047 0.106 0.180 rg');
+  cmds.push(`1 0 0 1 ${qrBoxX - 6} ${qrBoxY - 26} Tm`);
+  cmds.push(`(${escapePdfString('SCAN TO VERIFY CREDENTIAL')}) Tj`);
+  cmds.push('/F3 8.5 Tf');
+  cmds.push('0.643 0.290 0.110 rg');
+  cmds.push(`1 0 0 1 ${qrBoxX - 6} ${qrBoxY - 40} Tm`);
+  cmds.push(`(${escapePdfString(spec.certificateCode)}) Tj`);
+  cmds.push('ET');
+
+  // Signatures & Footer Bar
+  cmds.push('0.047 0.106 0.180 RG');
+  cmds.push('0.8 w');
+  cmds.push('60 112 m 270 112 l S');
+  cmds.push('310 112 m 520 112 l S');
+
+  cmds.push('BT');
+  cmds.push('/F2 10 Tf');
+  cmds.push('0.047 0.106 0.180 rg');
+  cmds.push('1 0 0 1 60 96 Tm');
+  cmds.push(`(${escapePdfString(spec.issuerName)}) Tj`);
+  cmds.push('/F1 8.5 Tf');
+  cmds.push('0.35 0.38 0.44 rg');
+  cmds.push('1 0 0 1 60 83 Tm');
+  cmds.push(`(${escapePdfString('Authorizing Educator / Course Lead')}) Tj`);
+
+  cmds.push('/F2 10 Tf');
+  cmds.push('0.047 0.106 0.180 rg');
+  cmds.push('1 0 0 1 310 96 Tm');
+  cmds.push(`(${escapePdfString('Akademi Academic Registry')}) Tj`);
+  cmds.push('/F1 8.5 Tf');
+  cmds.push('0.35 0.38 0.44 rg');
+  cmds.push('1 0 0 1 310 83 Tm');
+  cmds.push(`(${escapePdfString('Verified via Novic Technologies Platform')}) Tj`);
+
+  cmds.push('/F1 8 Tf');
+  cmds.push('0.35 0.38 0.44 rg');
+  cmds.push('1 0 0 1 60 52 Tm');
+  cmds.push(`(${escapePdfString(`Public Verification URL: ${spec.verifyUrl}`)}) Tj`);
+  cmds.push('ET');
+
+  const streamStr = cmds.join('\n') + '\n';
+  const streamLen = Buffer.byteLength(streamStr, 'latin1');
+
+  const objects: string[] = [
+    `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`,
+    `2 0 obj\n<< /Type /Pages /Kids [6 0 R] /Count 1 >>\nendobj\n`,
+    `3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`,
+    `4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n`,
+    `5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n`,
+    `6 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 7 0 R >>\nendobj\n`,
+    `7 0 obj\n<< /Length ${streamLen} >>\nstream\n${streamStr}endstream\nendobj\n`,
+  ];
+
+  const header = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
+  const chunks: Buffer[] = [Buffer.from(header, 'latin1')];
+  const offsets: number[] = [0];
+  let cursor = chunks[0].length;
+  for (const objStr of objects) {
+    offsets.push(cursor);
+    const buf = Buffer.from(objStr, 'latin1');
+    chunks.push(buf);
+    cursor += buf.length;
+  }
+  const xrefStart = cursor;
+  const totalObjects = objects.length + 1;
+  let xref = `xref\n0 ${totalObjects}\n0000000000 65535 f \n`;
+  for (let i = 1; i < offsets.length; i += 1) {
+    xref += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  xref += `trailer\n<< /Size ${totalObjects} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
+  chunks.push(Buffer.from(xref, 'latin1'));
+  return Buffer.concat(chunks);
+}

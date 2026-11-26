@@ -7,7 +7,7 @@ import multer from 'multer';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { WebSocket, WebSocketServer } from 'ws';
-import { buildPdfDocumentBuffer } from './server/pdf.ts';
+import { buildCertificatePdfBuffer, buildPdfDocumentBuffer } from './server/pdf.ts';
 import {
   AkademiDatabase,
   StoredUser,
@@ -24,22 +24,33 @@ import type {
   AccountCategory,
   AccountRequest,
   AuditLogEntry,
+  BoardPointerState,
+  CertificateRecord,
   CourseItem,
+  CourseQaReply,
+  CourseQaThread,
   DirectMessageThread,
   EnrollmentRecord,
   KycSubmission,
   LearnerAcademicDoc,
   LiveChatMessage,
+  LivePoll,
   LiveSession,
   MasterAnalyticsSummary,
   PublicFeaturedCreator,
   PublicFeaturedResource,
   PublicFeaturedSeminar,
+  QuizAttempt,
+  QuizCurriculumTag,
+  QuizItem,
+  QuizQuestion,
+  QuizQuestionResult,
   ResourceItem,
   ResourceType,
   SupportTicket,
   UserProfile,
   UserRole,
+  WhiteboardStroke,
 } from './src/types/akademi.ts';
 
 dotenv.config();
@@ -174,8 +185,152 @@ function canManageCourse(actor: StoredUser, course: CourseItem): boolean {
   return (
     actor.role === 'MASTER_ADMIN' ||
     course.ownerId === actor.id ||
+    course.assignedInstructorId === actor.id ||
     Boolean(actor.institutionId && course.institutionId === actor.institutionId)
   );
+}
+
+function canAccessCourseFeatures(user: StoredUser, course: CourseItem): boolean {
+  if (canManageCourse(user, course)) return true;
+  if (course.enrolledLearnerIds.includes(user.id)) return true;
+  if (user.purchasedCourseIds.includes(course.id)) return true;
+  return db.enrollments.some(
+    (e) => e.courseId === course.id && e.learnerId === user.id && e.academicStatus === 'APPROVED'
+  );
+}
+
+function gradeToLabel(percent: number): string {
+  if (percent >= 85) return 'A';
+  if (percent >= 80) return 'A-';
+  if (percent >= 75) return 'B+';
+  if (percent >= 70) return 'B';
+  if (percent >= 60) return 'C+';
+  if (percent >= 50) return 'C';
+  if (percent >= 40) return 'D';
+  return 'F';
+}
+
+function recalculateEnrollmentProgress(course: CourseItem, enrollment: EnrollmentRecord): number {
+  const publishedQuizzes = db.quizzes.filter((q) => q.courseId === course.id && q.published);
+  const totalUnits = course.resourceIds.length + publishedQuizzes.length;
+  if (totalUnits <= 0) return enrollment.progressPercent || 0;
+
+  const doneResources = enrollment.completedResourceIds.filter((rid) =>
+    course.resourceIds.includes(rid)
+  ).length;
+
+  const passedQuizIds = new Set(
+    db.quizAttempts
+      .filter((a) => a.courseId === course.id && a.learnerId === enrollment.learnerId && a.passed)
+      .map((a) => a.quizId)
+  );
+
+  const doneQuizzes = publishedQuizzes.filter((q) => passedQuizIds.has(q.id)).length;
+  return Math.min(100, Math.round(((doneResources + doneQuizzes) / totalUnits) * 100));
+}
+
+function ensureCertificateForEnrollment(
+  enrollment: EnrollmentRecord,
+  course?: CourseItem
+): CertificateRecord | null {
+  if (enrollment.academicStatus !== 'APPROVED' || enrollment.progressPercent < 100) {
+    return null;
+  }
+  const existing = db.certificates.find(
+    (c) =>
+      c.enrollmentId === enrollment.id ||
+      (c.courseId === enrollment.courseId && c.learnerId === enrollment.learnerId)
+  );
+  if (existing) {
+    enrollment.certificateId = existing.id;
+    enrollment.certificateCode = existing.certificateCode;
+    return existing;
+  }
+
+  const targetCourse = course || db.courses.find((c) => c.id === enrollment.courseId);
+  const owner = db.users.find((u) => u.id === enrollment.ownerId);
+  const year = new Date().getFullYear();
+  let code = '';
+  do {
+    code = `AKD-${year}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+  } while (db.certificates.some((c) => c.certificateCode === code));
+
+  const cert: CertificateRecord = {
+    id: `cert-${crypto.randomUUID().slice(0, 8)}`,
+    certificateCode: code,
+    enrollmentId: enrollment.id,
+    courseId: enrollment.courseId,
+    courseTitle: targetCourse?.title || enrollment.courseTitle,
+    subject: targetCourse?.subject || 'Academic Studies',
+    educationLevel: targetCourse?.requiredLevel || enrollment.learnerDeclaredLevel,
+    learnerId: enrollment.learnerId,
+    learnerName: enrollment.learnerName,
+    issuerId: enrollment.ownerId,
+    issuerName: owner?.name || targetCourse?.ownerName || 'Akademi Faculty',
+    institutionName: targetCourse?.institutionName || owner?.institutionName,
+    gradeLabel: enrollment.gradeLabel || 'Pass',
+    attendanceMinutes: enrollment.attendanceMinutes,
+    issuedAt: new Date().toISOString(),
+  };
+
+  db.certificates.unshift(cert);
+  enrollment.certificateId = cert.id;
+  enrollment.certificateCode = cert.certificateCode;
+  sendToUser(enrollment.learnerId, 'certificate:issued', { certificate: cert, enrollment });
+  return cert;
+}
+
+function extractCourseMentions(text: string, course: CourseItem): string[] {
+  const candidates = new Map<string, StoredUser>();
+  for (const u of db.users) {
+    if (
+      u.id === course.ownerId ||
+      u.id === course.assignedInstructorId ||
+      (course.institutionId && u.institutionId === course.institutionId) ||
+      course.enrolledLearnerIds.includes(u.id) ||
+      db.enrollments.some((e) => e.courseId === course.id && e.learnerId === u.id && e.academicStatus === 'APPROVED')
+    ) {
+      candidates.set(u.id, u);
+    }
+  }
+  const lower = text.toLowerCase();
+  const matched: string[] = [];
+  for (const u of candidates.values()) {
+    const fullHandle = `@${u.name.toLowerCase()}`;
+    const firstToken = `@${u.name.split(/\s+/)[0].toLowerCase()}`;
+    const compactHandle = `@${u.name.toLowerCase().replace(/\s+/g, '')}`;
+    if (
+      lower.includes(fullHandle) ||
+      (firstToken.length > 3 && lower.includes(firstToken)) ||
+      lower.includes(compactHandle)
+    ) {
+      matched.push(u.name);
+    }
+  }
+  return matched;
+}
+
+function buildLiveKitToken(apiKey: string, apiSecret: string, roomName: string, user: StoredUser, canPublish: boolean): string {
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(
+    JSON.stringify({
+      iss: apiKey,
+      sub: user.id,
+      name: user.name,
+      nbf: now - 10,
+      exp: now + 3600 * 4,
+      video: {
+        room: roomName,
+        roomJoin: true,
+        canPublish,
+        canSubscribe: true,
+        canPublishData: true,
+      },
+    })
+  ).toString('base64url');
+  const sig = crypto.createHmac('sha256', apiSecret).update(`${header}.${payload}`).digest('base64url');
+  return `${header}.${payload}.${sig}`;
 }
 
 function canAttachResource(actor: StoredUser, res: ResourceItem): boolean {
@@ -842,6 +997,39 @@ async function startServer() {
     db.tickets.unshift(ticket);
     persist();
     res.status(201).json({ ticketId: ticket.id });
+  });
+
+  // Public Academic Certificate Verification (strictly non-PII public academic ledger fields)
+  app.get('/api/public/verify-certificate/:code', (req, res) => {
+    const code = String(req.params.code || '').trim().toUpperCase();
+    if (!code) {
+      res.status(400).json({ valid: false, error: 'Verification code is required.' });
+      return;
+    }
+    const cert = db.certificates.find((c) => c.certificateCode.toUpperCase() === code);
+    if (!cert) {
+      res.status(404).json({
+        valid: false,
+        error: `No verified Akademi credential found matching code "${code}".`,
+      });
+      return;
+    }
+    res.json({
+      valid: true,
+      certificate: {
+        id: cert.id,
+        certificateCode: cert.certificateCode,
+        learnerName: cert.learnerName,
+        courseTitle: cert.courseTitle,
+        subject: cert.subject,
+        educationLevel: cert.educationLevel,
+        issuerName: cert.issuerName,
+        institutionName: cert.institutionName,
+        gradeLabel: cert.gradeLabel,
+        attendanceMinutes: cert.attendanceMinutes,
+        issuedAt: cert.issuedAt,
+      },
+    });
   });
 
   // ---------------- AUTHENTICATED LEARNER CATALOG ----------------
@@ -2375,6 +2563,9 @@ async function startServer() {
       if (decision === 'APPROVED' && course && !course.enrolledLearnerIds.includes(enrollment.learnerId)) {
         course.enrolledLearnerIds.push(enrollment.learnerId);
       }
+      if (decision === 'APPROVED' && enrollment.progressPercent >= 100) {
+        ensureCertificateForEnrollment(enrollment, course);
+      }
 
       logAudit(
         actor,
@@ -2476,10 +2667,11 @@ async function startServer() {
         enrollment.progressPercent = Math.max(0, Math.min(100, Number(req.body.progressPercent) || 0));
       }
 
+      const issuedCert = ensureCertificateForEnrollment(enrollment);
       logAudit(actor, 'ENROLLMENT_UPDATED', 'ENROLLMENT', enrollment.id, `${actor.name} updated enrollment for ${enrollment.learnerName}.`);
       sendToUser(enrollment.learnerId, 'enrollment:updated', { enrollment });
       persist();
-      res.json({ enrollment });
+      res.json({ enrollment, issuedCertificate: issuedCert });
     }
   );
 
@@ -2902,13 +3094,10 @@ async function startServer() {
     } else {
       enrollment.completedResourceIds = enrollment.completedResourceIds.filter((id) => id !== resourceId);
     }
-    const total = Math.max(1, course.resourceIds.length);
-    enrollment.progressPercent = Math.min(
-      100,
-      Math.round((enrollment.completedResourceIds.length / total) * 100)
-    );
+    enrollment.progressPercent = recalculateEnrollmentProgress(course, enrollment);
+    const issuedCertificate = ensureCertificateForEnrollment(enrollment, course);
     persist();
-    res.json({ enrollment });
+    res.json({ enrollment, issuedCertificate });
   });
 
   // ---------------- SECURE FILE DELIVERY (DOCUMENTS ONLY — NEVER PLAIN TEXT) ----------------
@@ -3341,6 +3530,705 @@ async function startServer() {
       pinnedResources,
       participantDirectory,
     });
+  });
+
+  app.get('/api/sessions/:id/rtc-config', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const session = db.liveSessions.find((s) => s.id === req.params.id);
+    if (!session) {
+      res.status(404).json({ error: 'Live session not found.' });
+      return;
+    }
+    const access = canUserJoinSession(user, session);
+    if (!access.allowed) {
+      res.status(403).json({ error: access.reason || 'Access denied to live session.' });
+      return;
+    }
+    const lkUrl = process.env.LIVEKIT_URL?.trim();
+    const lkKey = process.env.LIVEKIT_API_KEY?.trim();
+    const lkSecret = process.env.LIVEKIT_API_SECRET?.trim();
+    const canPublish =
+      user.role === 'MASTER_ADMIN' ||
+      user.id === session.hostId ||
+      Boolean(user.institutionId && session.institutionId === user.institutionId) ||
+      session.micGrantedUserIds.includes(user.id);
+
+    if (lkUrl && lkKey && lkSecret) {
+      const token = buildLiveKitToken(lkKey, lkSecret, session.id, user, canPublish);
+      res.json({
+        mode: 'LIVEKIT_SFU',
+        livekitUrl: lkUrl,
+        roomName: session.id,
+        token,
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      });
+      return;
+    }
+
+    res.json({
+      mode: 'WEBRTC_MESH',
+      roomName: session.id,
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+    });
+  });
+
+  // ---------------- VERIFIABLE CERTIFICATES ----------------
+  app.get('/api/certificates/mine', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    let certificates: CertificateRecord[];
+    if (user.role === 'MASTER_ADMIN') {
+      certificates = db.certificates;
+    } else if (isContributorRole(user.role)) {
+      certificates = db.certificates.filter(
+        (c) =>
+          c.issuerId === user.id ||
+          db.courses.some((crs) => crs.id === c.courseId && canManageCourse(user, crs))
+      );
+    } else {
+      certificates = db.certificates.filter((c) => c.learnerId === user.id);
+    }
+    res.json({ certificates });
+  });
+
+  app.get('/api/files/certificate/:id', requireAuth, async (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const cert = db.certificates.find(
+      (c) => c.id === req.params.id || c.certificateCode.toUpperCase() === String(req.params.id).toUpperCase()
+    );
+    if (!cert) {
+      res.status(404).json({ error: 'Certificate record not found.' });
+      return;
+    }
+    const course = db.courses.find((c) => c.id === cert.courseId);
+    const authorized =
+      user.role === 'MASTER_ADMIN' ||
+      cert.learnerId === user.id ||
+      cert.issuerId === user.id ||
+      Boolean(course && canManageCourse(user, course));
+    if (!authorized) {
+      res.status(403).json({ error: 'Access denied to this certificate document.' });
+      return;
+    }
+
+    const origin = `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
+    const verifyUrl = `${origin}/?verify=${encodeURIComponent(cert.certificateCode)}`;
+    const pdfBuf = await buildCertificatePdfBuffer({
+      certificateCode: cert.certificateCode,
+      learnerName: cert.learnerName,
+      courseTitle: cert.courseTitle,
+      subject: cert.subject,
+      educationLevel: cert.educationLevel,
+      issuerName: cert.issuerName,
+      institutionName: cert.institutionName,
+      gradeLabel: cert.gradeLabel,
+      attendanceMinutes: cert.attendanceMinutes,
+      issuedAt: cert.issuedAt,
+      verifyUrl,
+    });
+
+    const forceDownload = req.query.download === '1';
+    const safePdfName = `${cert.certificateCode.replace(/[^a-zA-Z0-9._-]/g, '_')}.pdf`;
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `${forceDownload ? 'attachment' : 'inline'}; filename="${safePdfName}"`
+    );
+    res.send(pdfBuf);
+  });
+
+  // ---------------- COURSE Q&A, PEER DISCUSSION & OFFICE HOURS ----------------
+  app.get('/api/courses/:courseId/qa', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const course = db.courses.find((c) => c.id === req.params.courseId);
+    if (!course) {
+      res.status(404).json({ error: 'Course not found.' });
+      return;
+    }
+    if (!canAccessCourseFeatures(user, course)) {
+      res.status(403).json({ error: 'Approved course enrollment or instructor access required.' });
+      return;
+    }
+
+    const threads = db.courseQaThreads
+      .filter((th) => th.courseId === course.id)
+      .sort((a, b) => {
+        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+
+    const mentionCandidates: { id: string; name: string; role: UserRole }[] = [];
+    const seen = new Set<string>();
+    for (const u of db.users) {
+      if (
+        !seen.has(u.id) &&
+        (u.id === course.ownerId ||
+          u.id === course.assignedInstructorId ||
+          (course.institutionId && u.institutionId === course.institutionId) ||
+          course.enrolledLearnerIds.includes(u.id) ||
+          db.enrollments.some((e) => e.courseId === course.id && e.learnerId === u.id && e.academicStatus === 'APPROVED'))
+      ) {
+        seen.add(u.id);
+        mentionCandidates.push({ id: u.id, name: u.name, role: u.role });
+      }
+    }
+
+    res.json({ threads, mentionCandidates });
+  });
+
+  app.post('/api/courses/:courseId/qa', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const course = db.courses.find((c) => c.id === req.params.courseId);
+    if (!course) {
+      res.status(404).json({ error: 'Course not found.' });
+      return;
+    }
+    if (!canAccessCourseFeatures(user, course)) {
+      res.status(403).json({ error: 'Approved course enrollment or instructor access required.' });
+      return;
+    }
+
+    const title = String(req.body?.title || '').trim().slice(0, 180);
+    const body = String(req.body?.body || '').trim().slice(0, 2400);
+    const requestedOfficeHour = Boolean(req.body?.isOfficeHour);
+    const officeHourSlotRaw = req.body?.officeHourSlot ?? req.body?.officeHourSchedule;
+    const officeHourSlot = officeHourSlotRaw
+      ? String(officeHourSlotRaw).trim().slice(0, 120)
+      : undefined;
+
+    if (!title || !body) {
+      res.status(400).json({ error: 'Thread title and question/announcement body are required.' });
+      return;
+    }
+    const isStaff = canManageCourse(user, course);
+    const isOfficeHour = isStaff && requestedOfficeHour;
+    const mentions = extractCourseMentions(`${title} ${body}`, course);
+    const nowIso = new Date().toISOString();
+
+    const thread: CourseQaThread = {
+      id: `qa-${crypto.randomUUID().slice(0, 8)}`,
+      courseId: course.id,
+      courseTitle: course.title,
+      authorId: user.id,
+      authorName: user.name,
+      authorRole: user.role,
+      title,
+      body,
+      isOfficeHour,
+      officeHourSlot: isOfficeHour ? officeHourSlot : undefined,
+      isPinned: Boolean(isStaff && req.body?.isPinned),
+      upvoterIds: [user.id],
+      mentions,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      replies: [],
+    };
+
+    db.courseQaThreads.unshift(thread);
+    persist();
+    for (const client of connectedSockets) {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(JSON.stringify({ event: 'qa:updated', payload: { courseId: course.id, thread } }));
+      }
+    }
+    res.status(201).json({ thread });
+  });
+
+  app.post('/api/qa/:threadId/replies', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const thread = db.courseQaThreads.find((th) => th.id === req.params.threadId);
+    if (!thread) {
+      res.status(404).json({ error: 'Q&A thread not found.' });
+      return;
+    }
+    const course = db.courses.find((c) => c.id === thread.courseId);
+    if (!course || !canAccessCourseFeatures(user, course)) {
+      res.status(403).json({ error: 'Access denied to this course Q&A room.' });
+      return;
+    }
+    const body = String(req.body?.body || '').trim().slice(0, 2000);
+    if (!body) {
+      res.status(400).json({ error: 'Reply body cannot be empty.' });
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    const reply: CourseQaReply = {
+      id: `qar-${crypto.randomUUID().slice(0, 8)}`,
+      threadId: thread.id,
+      authorId: user.id,
+      authorName: user.name,
+      authorRole: user.role,
+      body,
+      upvoterIds: [],
+      isInstructorVerified: false,
+      mentions: extractCourseMentions(body, course),
+      createdAt: nowIso,
+    };
+    thread.replies.push(reply);
+    thread.updatedAt = nowIso;
+    persist();
+    for (const client of connectedSockets) {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(JSON.stringify({ event: 'qa:updated', payload: { courseId: course.id, thread } }));
+      }
+    }
+    res.status(201).json({ thread, reply });
+  });
+
+  app.post('/api/qa/:threadId/upvote', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const thread = db.courseQaThreads.find((th) => th.id === req.params.threadId);
+    if (!thread) {
+      res.status(404).json({ error: 'Q&A thread not found.' });
+      return;
+    }
+    const course = db.courses.find((c) => c.id === thread.courseId);
+    if (!course || !canAccessCourseFeatures(user, course)) {
+      res.status(403).json({ error: 'Access denied.' });
+      return;
+    }
+    if (thread.upvoterIds.includes(user.id)) {
+      thread.upvoterIds = thread.upvoterIds.filter((id) => id !== user.id);
+    } else {
+      thread.upvoterIds.push(user.id);
+    }
+    persist();
+    res.json({ thread });
+  });
+
+  app.post('/api/qa/:threadId/replies/:replyId/upvote', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const thread = db.courseQaThreads.find((th) => th.id === req.params.threadId);
+    if (!thread) {
+      res.status(404).json({ error: 'Q&A thread not found.' });
+      return;
+    }
+    const course = db.courses.find((c) => c.id === thread.courseId);
+    if (!course || !canAccessCourseFeatures(user, course)) {
+      res.status(403).json({ error: 'Access denied.' });
+      return;
+    }
+    const reply = thread.replies.find((r) => r.id === req.params.replyId);
+    if (!reply) {
+      res.status(404).json({ error: 'Reply not found.' });
+      return;
+    }
+    if (reply.upvoterIds.includes(user.id)) {
+      reply.upvoterIds = reply.upvoterIds.filter((id) => id !== user.id);
+    } else {
+      reply.upvoterIds.push(user.id);
+    }
+    persist();
+    res.json({ thread });
+  });
+
+  app.post('/api/qa/:threadId/replies/:replyId/verify', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const thread = db.courseQaThreads.find((th) => th.id === req.params.threadId);
+    if (!thread) {
+      res.status(404).json({ error: 'Q&A thread not found.' });
+      return;
+    }
+    const course = db.courses.find((c) => c.id === thread.courseId);
+    if (!course || !canManageCourse(user, course)) {
+      res.status(403).json({ error: 'Only course instructors or admins can verify answers.' });
+      return;
+    }
+    const reply = thread.replies.find((r) => r.id === req.params.replyId);
+    if (!reply) {
+      res.status(404).json({ error: 'Reply not found.' });
+      return;
+    }
+    reply.isInstructorVerified = !reply.isInstructorVerified;
+    if (reply.isInstructorVerified) {
+      reply.verifiedByName = user.name;
+    } else {
+      reply.verifiedByName = undefined;
+    }
+    thread.updatedAt = new Date().toISOString();
+    persist();
+    for (const client of connectedSockets) {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(JSON.stringify({ event: 'qa:updated', payload: { courseId: course.id, thread } }));
+      }
+    }
+    res.json({ thread });
+  });
+
+  app.post('/api/qa/:threadId/pin', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const thread = db.courseQaThreads.find((th) => th.id === req.params.threadId);
+    if (!thread) {
+      res.status(404).json({ error: 'Q&A thread not found.' });
+      return;
+    }
+    const course = db.courses.find((c) => c.id === thread.courseId);
+    if (!course || !canManageCourse(user, course)) {
+      res.status(403).json({ error: 'Only course instructors or admins can pin threads.' });
+      return;
+    }
+    thread.isPinned = !thread.isPinned;
+    persist();
+    res.json({ thread });
+  });
+
+  app.delete('/api/qa/:threadId', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const thread = db.courseQaThreads.find((th) => th.id === req.params.threadId);
+    if (!thread) {
+      res.status(404).json({ error: 'Q&A thread not found.' });
+      return;
+    }
+    const course = db.courses.find((c) => c.id === thread.courseId);
+    if (thread.authorId !== user.id && (!course || !canManageCourse(user, course))) {
+      res.status(403).json({ error: 'Not authorized to delete this Q&A thread.' });
+      return;
+    }
+    db.courseQaThreads = db.courseQaThreads.filter((th) => th.id !== thread.id);
+    persist();
+    res.json({ deletedId: thread.id });
+  });
+
+  // ---------------- INTERACTIVE ASSESSMENTS & PAST-PAPER QUIZZES ----------------
+  function sanitizeQuizForViewer(quiz: QuizItem, user: StoredUser, course: CourseItem): QuizItem {
+    if (canManageCourse(user, course)) return quiz;
+    return {
+      ...quiz,
+      questions: quiz.questions.map((q) => ({
+        ...q,
+        correctOptionIndex: undefined,
+        acceptedKeywords: undefined,
+      })),
+    };
+  }
+
+  app.get('/api/quizzes/mine', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const accessibleCourses = db.courses.filter((c) => canAccessCourseFeatures(user, c));
+    const accessibleCourseIds = new Set(accessibleCourses.map((c) => c.id));
+
+    const quizzes = db.quizzes
+      .filter((q) => {
+        if (!accessibleCourseIds.has(q.courseId)) return false;
+        const course = accessibleCourses.find((c) => c.id === q.courseId)!;
+        return q.published || canManageCourse(user, course);
+      })
+      .map((q) => {
+        const course = accessibleCourses.find((c) => c.id === q.courseId)!;
+        return sanitizeQuizForViewer(q, user, course);
+      });
+
+    const attempts = db.quizAttempts.filter((a) => {
+      if (a.learnerId === user.id) return true;
+      const course = db.courses.find((c) => c.id === a.courseId);
+      return Boolean(course && canManageCourse(user, course));
+    });
+
+    res.json({ quizzes, attempts });
+  });
+
+  app.get('/api/courses/:courseId/quizzes', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const course = db.courses.find((c) => c.id === req.params.courseId);
+    if (!course) {
+      res.status(404).json({ error: 'Course not found.' });
+      return;
+    }
+    if (!canAccessCourseFeatures(user, course)) {
+      res.status(403).json({ error: 'Approved enrollment or instructor access required.' });
+      return;
+    }
+    const isStaff = canManageCourse(user, course);
+    const quizzes = db.quizzes
+      .filter((q) => q.courseId === course.id && (isStaff || q.published))
+      .map((q) => sanitizeQuizForViewer(q, user, course));
+
+    const attempts = db.quizAttempts.filter(
+      (a) => a.courseId === course.id && (isStaff || a.learnerId === user.id)
+    );
+    res.json({ quizzes, attempts });
+  });
+
+  app.post(
+    '/api/courses/:courseId/quizzes',
+    requireAuth,
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const user = req.authUser!;
+      const course = db.courses.find((c) => c.id === req.params.courseId);
+      if (!course) {
+        res.status(404).json({ error: 'Course not found.' });
+        return;
+      }
+      if (!canManageCourse(user, course)) {
+        res.status(403).json({ error: 'You do not have permission to create quizzes in this course.' });
+        return;
+      }
+      const title = String(req.body?.title || '').trim();
+      const description = String(req.body?.description || '').trim();
+      const curriculumTag = String(req.body?.curriculumTag || 'GENERAL') as QuizCurriculumTag;
+      const timeLimitMinutes = Math.max(2, Math.min(180, Number(req.body?.timeLimitMinutes || 20)));
+      const passingPercent = Math.max(20, Math.min(100, Number(req.body?.passingPercent || 60)));
+      const rawQuestions = Array.isArray(req.body?.questions) ? req.body.questions : [];
+      if (!title || rawQuestions.length === 0) {
+        res.status(400).json({ error: 'Quiz title and at least one question are required.' });
+        return;
+      }
+
+      const questions: QuizQuestion[] = rawQuestions.map((rq: Record<string, unknown>, idx: number) => {
+        const qKind = rq.kind === 'STRUCTURED' || rq.type === 'STRUCTURED' ? 'STRUCTURED' : 'MCQ';
+        return {
+          id: String(rq.id || `q-${idx + 1}-${crypto.randomUUID().slice(0, 4)}`),
+          kind: qKind,
+          prompt: String(rq.prompt || '').trim(),
+          marks: Math.max(1, Number(rq.marks || 5)),
+          options: qKind === 'MCQ' && Array.isArray(rq.options) ? rq.options.map((o) => String(o).trim()).filter(Boolean) : undefined,
+          correctOptionIndex: qKind === 'MCQ' ? Math.max(0, Number(rq.correctOptionIndex || 0)) : undefined,
+          acceptedKeywords:
+            qKind === 'STRUCTURED' && Array.isArray(rq.acceptedKeywords)
+              ? rq.acceptedKeywords.map((k) => String(k).trim()).filter(Boolean)
+              : undefined,
+          sampleAnswer: rq.sampleAnswer ? String(rq.sampleAnswer).trim() : undefined,
+          workedSolution: String(rq.workedSolution || 'Review the course syllabus notes for the step-by-step derivation.').trim(),
+        };
+      });
+
+      const quiz: QuizItem = {
+        id: `quiz-${crypto.randomUUID().slice(0, 8)}`,
+        courseId: course.id,
+        courseTitle: course.title,
+        ownerId: user.id,
+        ownerName: user.name,
+        title,
+        description: description || `${curriculumTag} timed assessment for ${course.title}.`,
+        curriculumTag,
+        isPastPaper: Boolean(req.body?.isPastPaper),
+        timeLimitMinutes,
+        passingPercent,
+        published: req.body?.published !== false,
+        questions,
+        createdAt: new Date().toISOString(),
+      };
+
+      db.quizzes.unshift(quiz);
+      persist();
+      res.status(201).json({ quiz });
+    }
+  );
+
+  app.patch(
+    '/api/quizzes/:id',
+    requireAuth,
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const user = req.authUser!;
+      const quiz = db.quizzes.find((q) => q.id === req.params.id);
+      if (!quiz) {
+        res.status(404).json({ error: 'Quiz not found.' });
+        return;
+      }
+      const course = db.courses.find((c) => c.id === quiz.courseId);
+      if (!course || !canManageCourse(user, course)) {
+        res.status(403).json({ error: 'Not authorized to edit this quiz.' });
+        return;
+      }
+      if (req.body?.title !== undefined) quiz.title = String(req.body.title).trim() || quiz.title;
+      if (req.body?.description !== undefined) quiz.description = String(req.body.description).trim();
+      if (req.body?.curriculumTag !== undefined) quiz.curriculumTag = String(req.body.curriculumTag) as QuizCurriculumTag;
+      if (req.body?.isPastPaper !== undefined) quiz.isPastPaper = Boolean(req.body.isPastPaper);
+      if (req.body?.timeLimitMinutes !== undefined) quiz.timeLimitMinutes = Math.max(2, Math.min(180, Number(req.body.timeLimitMinutes) || 20));
+      if (req.body?.passingPercent !== undefined) quiz.passingPercent = Math.max(20, Math.min(100, Number(req.body.passingPercent) || 60));
+      if (req.body?.published !== undefined) quiz.published = Boolean(req.body.published);
+      if (Array.isArray(req.body?.questions) && req.body.questions.length > 0) {
+        quiz.questions = req.body.questions.map((rq: Record<string, unknown>, idx: number) => {
+          const qKind = rq.kind === 'STRUCTURED' || rq.type === 'STRUCTURED' ? 'STRUCTURED' : 'MCQ';
+          return {
+            id: String(rq.id || `q-${idx + 1}-${crypto.randomUUID().slice(0, 4)}`),
+            kind: qKind,
+            prompt: String(rq.prompt || '').trim(),
+            marks: Math.max(1, Number(rq.marks || 5)),
+            options: qKind === 'MCQ' && Array.isArray(rq.options) ? rq.options.map((o) => String(o).trim()).filter(Boolean) : undefined,
+            correctOptionIndex: qKind === 'MCQ' ? Math.max(0, Number(rq.correctOptionIndex || 0)) : undefined,
+            acceptedKeywords:
+              qKind === 'STRUCTURED' && Array.isArray(rq.acceptedKeywords)
+                ? rq.acceptedKeywords.map((k) => String(k).trim()).filter(Boolean)
+                : undefined,
+            sampleAnswer: rq.sampleAnswer ? String(rq.sampleAnswer).trim() : undefined,
+            workedSolution: String(rq.workedSolution || '').trim(),
+          };
+        });
+      }
+      persist();
+      res.json({ quiz });
+    }
+  );
+
+  app.delete(
+    '/api/quizzes/:id',
+    requireAuth,
+    requireRole('SOLO_EDUCATOR', 'INSTITUTION_ADMIN', 'COURSE_ADMIN', 'MASTER_ADMIN'),
+    (req: AuthedRequest, res) => {
+      const user = req.authUser!;
+      const quiz = db.quizzes.find((q) => q.id === req.params.id);
+      if (!quiz) {
+        res.status(404).json({ error: 'Quiz not found.' });
+        return;
+      }
+      const course = db.courses.find((c) => c.id === quiz.courseId);
+      if (!course || !canManageCourse(user, course)) {
+        res.status(403).json({ error: 'Not authorized to delete this quiz.' });
+        return;
+      }
+      db.quizzes = db.quizzes.filter((q) => q.id !== quiz.id);
+      db.quizAttempts = db.quizAttempts.filter((a) => a.quizId !== quiz.id);
+      persist();
+      res.json({ deletedId: quiz.id });
+    }
+  );
+
+  app.post('/api/quizzes/:id/submit', requireAuth, (req: AuthedRequest, res) => {
+    const user = req.authUser!;
+    const quiz = db.quizzes.find((q) => q.id === req.params.id);
+    if (!quiz) {
+      res.status(404).json({ error: 'Quiz not found.' });
+      return;
+    }
+    const course = db.courses.find((c) => c.id === quiz.courseId);
+    if (!course || !canAccessCourseFeatures(user, course)) {
+      res.status(403).json({ error: 'Approved enrollment required to submit this assessment.' });
+      return;
+    }
+
+    const answers = (req.body?.answers && typeof req.body.answers === 'object' ? req.body.answers : {}) as Record<
+      string,
+      number | string
+    >;
+    const durationSeconds = Math.max(1, Number(req.body?.durationSeconds || 60));
+
+    let earnedMarks = 0;
+    let totalMarks = 0;
+
+    const questionResults: QuizQuestionResult[] = quiz.questions.map((q) => {
+      totalMarks += q.marks;
+      const submitted = answers[q.id];
+      if (q.kind === 'MCQ') {
+        const selectedIndex = typeof submitted === 'number' ? submitted : Number(submitted ?? -1);
+        const isCorrect = selectedIndex === q.correctOptionIndex;
+        const awarded = isCorrect ? q.marks : 0;
+        earnedMarks += awarded;
+        const correctOptionText =
+          q.options && typeof q.correctOptionIndex === 'number'
+            ? q.options[q.correctOptionIndex] || ''
+            : '';
+        return {
+          questionId: q.id,
+          prompt: q.prompt,
+          kind: 'MCQ',
+          maxMarks: q.marks,
+          earnedMarks: awarded,
+          isCorrect,
+          submittedAnswer:
+            q.options && selectedIndex >= 0 && selectedIndex < q.options.length
+              ? q.options[selectedIndex]
+              : 'No answer selected',
+          correctAnswer: correctOptionText,
+          correctAnswerDisplay: correctOptionText,
+          workedSolution: q.workedSolution,
+        };
+      }
+
+      // STRUCTURED auto-grading against rubric acceptedKeywords
+      const responseText = String(submitted || '').trim();
+      const lowerResp = responseText.toLowerCase();
+      const keywords = q.acceptedKeywords || [];
+      const matched = keywords.filter((kw) => lowerResp.includes(kw.toLowerCase()));
+      let ratio = 0;
+      if (keywords.length === 0) {
+        ratio = responseText.length >= 12 ? 1 : 0;
+      } else if (matched.length >= Math.max(1, Math.ceil(keywords.length * 0.6))) {
+        ratio = 1;
+      } else if (matched.length >= 1) {
+        ratio = Math.min(0.85, matched.length / keywords.length);
+      }
+      const awarded = Number((q.marks * ratio).toFixed(1));
+      earnedMarks += awarded;
+      const expectedDisplay = q.sampleAnswer || keywords.join(', ');
+      return {
+        questionId: q.id,
+        prompt: q.prompt,
+        kind: 'STRUCTURED',
+        maxMarks: q.marks,
+        earnedMarks: awarded,
+        isCorrect: ratio >= 0.6,
+        submittedAnswer: responseText || 'No written response submitted',
+        correctAnswer: expectedDisplay,
+        correctAnswerDisplay: expectedDisplay,
+        matchedKeywords: matched,
+        workedSolution: q.workedSolution,
+      };
+    });
+
+    const percentScore = totalMarks > 0 ? Math.round((earnedMarks / totalMarks) * 100) : 0;
+    const passed = percentScore >= quiz.passingPercent;
+    const gradeLabel = gradeToLabel(percentScore);
+
+    const attempt: QuizAttempt = {
+      id: `qat-${crypto.randomUUID().slice(0, 8)}`,
+      quizId: quiz.id,
+      courseId: course.id,
+      learnerId: user.id,
+      learnerName: user.name,
+      answers,
+      submittedAt: new Date().toISOString(),
+      durationSeconds,
+      scoreEarned: Number(earnedMarks.toFixed(1)),
+      totalMarks,
+      percentScore,
+      passed,
+      gradeLabel,
+      questionResults,
+    };
+
+    db.quizAttempts.unshift(attempt);
+
+    // Automatically update learner's enrollment progressPercent, gradeLabel, and certificate if 100%
+    let updatedEnrollment: EnrollmentRecord | undefined;
+    let issuedCertificate: CertificateRecord | null = null;
+    const enrollment = db.enrollments.find(
+      (e) => e.courseId === course.id && e.learnerId === user.id && e.academicStatus === 'APPROVED'
+    );
+    if (enrollment) {
+      const learnerCourseAttempts = db.quizAttempts.filter(
+        (a) => a.courseId === course.id && a.learnerId === user.id
+      );
+      const bestByQuiz = new Map<string, number>();
+      for (const a of learnerCourseAttempts) {
+        bestByQuiz.set(a.quizId, Math.max(bestByQuiz.get(a.quizId) || 0, a.percentScore));
+      }
+      const scores = Array.from(bestByQuiz.values());
+      const avgScore =
+        scores.length > 0
+          ? Math.round(scores.reduce((acc, s) => acc + s, 0) / scores.length)
+          : percentScore;
+      enrollment.gradeLabel = gradeToLabel(avgScore);
+      enrollment.progressPercent = recalculateEnrollmentProgress(course, enrollment);
+      issuedCertificate = ensureCertificateForEnrollment(enrollment, course);
+      updatedEnrollment = enrollment;
+      sendToUser(user.id, 'enrollment:updated', { enrollment });
+    }
+
+    logAudit(
+      user,
+      'QUIZ_SUBMITTED',
+      'COURSE',
+      course.id,
+      `${user.name} submitted "${quiz.title}" (${percentScore}% · ${gradeLabel}).`
+    );
+    persist();
+    res.status(201).json({ attempt, enrollment: updatedEnrollment, issuedCertificate });
   });
 
   // ---------------- IN-SYSTEM COMMUNICATION ----------------
@@ -3790,6 +4678,13 @@ async function startServer() {
             raisedHandUserIds: session.raisedHandUserIds,
             micGrantedUserIds: session.micGrantedUserIds,
           });
+        } else if (action === 'DISMISS_HAND') {
+          const targetId = String(payload.targetUserId || '');
+          session.raisedHandUserIds = session.raisedHandUserIds.filter((id) => id !== targetId);
+          broadcastToSession(session.id, 'session:hands', {
+            raisedHandUserIds: session.raisedHandUserIds,
+            micGrantedUserIds: session.micGrantedUserIds,
+          });
         } else if (action === 'DELETE_MESSAGE') {
           const messageId = String(payload.messageId || '');
           session.chatMessages = session.chatMessages.filter((m) => m.id !== messageId);
@@ -3800,9 +4695,17 @@ async function startServer() {
             session.kickedUserIds.push(targetId);
           }
           session.activeParticipantIds = session.activeParticipantIds.filter((id) => id !== targetId);
+          session.raisedHandUserIds = session.raisedHandUserIds.filter((id) => id !== targetId);
+          session.micGrantedUserIds = session.micGrantedUserIds.filter((id) => id !== targetId);
+          const participantDirectory: Record<string, { id: string; name: string; role: UserRole }> = {};
+          for (const pid of session.activeParticipantIds) {
+            const pu = db.users.find((u) => u.id === pid);
+            if (pu) participantDirectory[pid] = { id: pu.id, name: pu.name, role: pu.role };
+          }
           sendToUser(targetId, 'session:kicked', { sessionId: session.id });
           broadcastToSession(session.id, 'session:presence', {
             activeParticipantIds: session.activeParticipantIds,
+            participantDirectory,
           });
         } else if (action === 'PIN_RESOURCE') {
           const resourceId = String(payload.resourceId || '');
@@ -3826,6 +4729,203 @@ async function startServer() {
         }
         persist();
       }
+
+      // Collaborative Lecture Whiteboard & Laser Slide Pointer
+      if (event === 'session:board_stroke' && client.sessionId) {
+        const session = db.liveSessions.find((s) => s.id === client.sessionId);
+        const freshUser = db.users.find((u) => u.id === client.userId);
+        if (!session || !freshUser) return;
+        const strokeRaw = payload.stroke as WhiteboardStroke | undefined;
+        if (!strokeRaw || !Array.isArray(strokeRaw.points) || strokeRaw.points.length === 0) return;
+
+        const cleanStroke: WhiteboardStroke = {
+          id: String(strokeRaw.id || `stk-${crypto.randomUUID().slice(0, 8)}`),
+          userId: freshUser.id,
+          userName: freshUser.name,
+          tool:
+            strokeRaw.tool === 'HIGHLIGHTER' || strokeRaw.tool === 'TEXT'
+              ? strokeRaw.tool
+              : 'PEN',
+          color: String(strokeRaw.color || '#F6F3EB').slice(0, 24),
+          width: Math.max(1, Math.min(20, Number(strokeRaw.width || 3))),
+          points: strokeRaw.points.slice(0, 250).map((pt) => ({
+            x: Math.max(0, Math.min(1, Number(pt.x) || 0)),
+            y: Math.max(0, Math.min(1, Number(pt.y) || 0)),
+          })),
+          text: strokeRaw.text ? String(strokeRaw.text).slice(0, 120) : undefined,
+          createdAt: new Date().toISOString(),
+        };
+
+        if (!session.whiteboardStrokes) session.whiteboardStrokes = [];
+        session.whiteboardStrokes.push(cleanStroke);
+        if (session.whiteboardStrokes.length > 350) {
+          session.whiteboardStrokes = session.whiteboardStrokes.slice(-350);
+        }
+        persist();
+        broadcastToSession(session.id, 'session:board_stroke', { stroke: cleanStroke });
+      }
+
+      if (event === 'session:board_undo' && client.sessionId) {
+        const session = db.liveSessions.find((s) => s.id === client.sessionId);
+        const freshUser = db.users.find((u) => u.id === client.userId);
+        if (!session || !freshUser || !session.whiteboardStrokes) return;
+        const isHost =
+          freshUser.id === session.hostId ||
+          freshUser.role === 'MASTER_ADMIN' ||
+          Boolean(freshUser.institutionId && session.institutionId === freshUser.institutionId);
+        if (isHost) {
+          session.whiteboardStrokes.pop();
+        } else {
+          for (let i = session.whiteboardStrokes.length - 1; i >= 0; i--) {
+            if (session.whiteboardStrokes[i].userId === freshUser.id) {
+              session.whiteboardStrokes.splice(i, 1);
+              break;
+            }
+          }
+        }
+        persist();
+        broadcastToSession(session.id, 'session:board_sync', { strokes: session.whiteboardStrokes });
+      }
+
+      if (event === 'session:board_clear' && client.sessionId) {
+        const session = db.liveSessions.find((s) => s.id === client.sessionId);
+        const freshUser = db.users.find((u) => u.id === client.userId);
+        if (!session || !freshUser) return;
+        const isHost =
+          freshUser.id === session.hostId ||
+          freshUser.role === 'MASTER_ADMIN' ||
+          Boolean(freshUser.institutionId && session.institutionId === freshUser.institutionId);
+        if (!isHost) return;
+        session.whiteboardStrokes = [];
+        persist();
+        broadcastToSession(session.id, 'session:board_sync', { strokes: [] });
+      }
+
+      if (event === 'session:board_pointer' && client.sessionId) {
+        const session = db.liveSessions.find((s) => s.id === client.sessionId);
+        const freshUser = db.users.find((u) => u.id === client.userId);
+        if (!session || !freshUser) return;
+        const active = payload.active !== false;
+        const pointer: BoardPointerState | null = active
+          ? {
+              userId: freshUser.id,
+              userName: freshUser.name,
+              x: Math.max(0, Math.min(1, Number(payload.x) || 0)),
+              y: Math.max(0, Math.min(1, Number(payload.y) || 0)),
+              active: true,
+            }
+          : null;
+        session.boardPointer = pointer;
+        broadcastToSession(session.id, 'session:board_pointer', { pointer });
+      }
+
+      // Live In-Session Comprehension Polls
+      if (event === 'session:poll_create' && client.sessionId) {
+        const session = db.liveSessions.find((s) => s.id === client.sessionId);
+        const freshUser = db.users.find((u) => u.id === client.userId);
+        if (!session || !freshUser) return;
+        const isHost =
+          freshUser.id === session.hostId ||
+          freshUser.role === 'MASTER_ADMIN' ||
+          Boolean(freshUser.institutionId && session.institutionId === freshUser.institutionId);
+        if (!isHost) return;
+
+        const question = String(payload.question || '').trim().slice(0, 220);
+        const rawOpts = Array.isArray(payload.options)
+          ? payload.options.map((o) => String(o).trim()).filter(Boolean).slice(0, 6)
+          : [];
+        if (!question || rawOpts.length < 2) return;
+
+        const poll: LivePoll = {
+          id: `poll-${crypto.randomUUID().slice(0, 8)}`,
+          question,
+          createdById: freshUser.id,
+          createdByName: freshUser.name,
+          createdAt: new Date().toISOString(),
+          isOpen: true,
+          options: rawOpts.map((text, idx) => ({
+            id: `opt-${idx + 1}-${crypto.randomUUID().slice(0, 4)}`,
+            text,
+            voterIds: [],
+          })),
+        };
+        if (!session.polls) session.polls = [];
+        session.polls.unshift(poll);
+        persist();
+        broadcastToSession(session.id, 'session:polls_sync', { polls: session.polls });
+      }
+
+      if (event === 'session:poll_vote' && client.sessionId) {
+        const session = db.liveSessions.find((s) => s.id === client.sessionId);
+        if (!session || !session.polls) return;
+        const pollId = String(payload.pollId || '');
+        const optionId = String(payload.optionId || '');
+        const poll = session.polls.find((p) => p.id === pollId);
+        if (!poll || !poll.isOpen) return;
+        const targetOpt = poll.options.find((o) => o.id === optionId);
+        if (!targetOpt) return;
+        for (const opt of poll.options) {
+          opt.voterIds = opt.voterIds.filter((id) => id !== client.userId);
+        }
+        targetOpt.voterIds.push(client.userId);
+        persist();
+        broadcastToSession(session.id, 'session:polls_sync', { polls: session.polls });
+      }
+
+      if (event === 'session:poll_toggle' && client.sessionId) {
+        const session = db.liveSessions.find((s) => s.id === client.sessionId);
+        const freshUser = db.users.find((u) => u.id === client.userId);
+        if (!session || !freshUser || !session.polls) return;
+        const isHost =
+          freshUser.id === session.hostId ||
+          freshUser.role === 'MASTER_ADMIN' ||
+          Boolean(freshUser.institutionId && session.institutionId === freshUser.institutionId);
+        if (!isHost) return;
+        const pollId = String(payload.pollId || '');
+        if (payload.delete) {
+          session.polls = session.polls.filter((p) => p.id !== pollId);
+        } else {
+          const poll = session.polls.find((p) => p.id === pollId);
+          if (poll) poll.isOpen = !poll.isOpen;
+        }
+        persist();
+        broadcastToSession(session.id, 'session:polls_sync', { polls: session.polls });
+      }
+
+      // Multi-Participant WebRTC Peer-to-Peer Mesh Signaling
+      if (event === 'webrtc:signal' && client.sessionId) {
+        const session = db.liveSessions.find((s) => s.id === client.sessionId);
+        const targetUserId = String(payload.targetUserId || '');
+        if (
+          !session ||
+          !targetUserId ||
+          targetUserId === client.userId ||
+          !session.activeParticipantIds.includes(client.userId) ||
+          !session.activeParticipantIds.includes(targetUserId)
+        ) {
+          return;
+        }
+        const sender = db.users.find((u) => u.id === client.userId);
+        sendToUser(targetUserId, 'webrtc:signal', {
+          sessionId: session.id,
+          fromUserId: client.userId,
+          fromName: sender?.name || 'Participant',
+          signalType: payload.signalType,
+          sdp: payload.sdp,
+          candidate: payload.candidate,
+        });
+      }
+
+      if (event === 'webrtc:media_state' && client.sessionId) {
+        const session = db.liveSessions.find((s) => s.id === client.sessionId);
+        if (!session || !session.activeParticipantIds.includes(client.userId)) return;
+        broadcastToSession(session.id, 'webrtc:peer_media', {
+          userId: client.userId,
+          micEnabled: Boolean(payload.micEnabled),
+          camEnabled: Boolean(payload.camEnabled),
+          screenSharing: Boolean(payload.screenSharing),
+        });
+      }
     });
 
     ws.on('close', () => {
@@ -3836,9 +4936,15 @@ async function startServer() {
           session.activeParticipantIds = session.activeParticipantIds.filter(
             (id) => id !== client.userId
           );
+          const participantDirectory: Record<string, { id: string; name: string; role: UserRole }> = {};
+          for (const pid of session.activeParticipantIds) {
+            const pu = db.users.find((u) => u.id === pid);
+            if (pu) participantDirectory[pid] = { id: pu.id, name: pu.name, role: pu.role };
+          }
           persist();
           broadcastToSession(session.id, 'session:presence', {
             activeParticipantIds: session.activeParticipantIds,
+            participantDirectory,
           });
         }
       }

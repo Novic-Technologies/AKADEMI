@@ -17,24 +17,30 @@ import type {
   UserProfile,
 } from '../types/akademi';
 
+import { CourseQaPanel, type QaCourseOption } from './CourseQaPanel';
+
 interface CommunicationPanelProps {
   currentUser: UserProfile;
   availableRecipients?: MessageRecipient[];
-  defaultTab?: 'THREADS' | 'SUPPORT';
+  qaCourses?: QaCourseOption[];
+  defaultTab?: 'THREADS' | 'SUPPORT' | 'QA';
   initialRecipientId?: string;
+  defaultQaCourseId?: string;
 }
 
 export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
   currentUser,
   availableRecipients = [],
+  qaCourses = [],
   defaultTab = 'THREADS',
   initialRecipientId = '',
+  defaultQaCourseId = '',
 }) => {
   const { t } = useI18n();
-  const [tab, setTab] = useState<'THREADS' | 'SUPPORT'>(
+  const [tab, setTab] = useState<'THREADS' | 'SUPPORT' | 'QA'>(
     initialRecipientId
       ? 'THREADS'
-      : currentUser.role === 'MASTER_ADMIN'
+      : currentUser.role === 'MASTER_ADMIN' && defaultTab === 'THREADS'
         ? 'SUPPORT'
         : defaultTab
   );
@@ -339,6 +345,22 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
             >
               {t.tabMasterAdminDesk} ({tickets.length})
             </button>
+            {qaCourses.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTab('QA');
+                  setEditingMsgId(null);
+                }}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+                  tab === 'QA'
+                    ? 'bg-[#C9642E] text-[#F8F5EE]'
+                    : 'text-[var(--ak-ink-2)] hover:text-[var(--ak-ink)]'
+                }`}
+              >
+                Course Q&amp;A ({qaCourses.length})
+              </button>
+            )}
           </div>
 
           {tab === 'SUPPORT' && currentUser.role !== 'MASTER_ADMIN' && (
@@ -503,7 +525,13 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
         </form>
       )}
 
-      {loading ? (
+      {tab === 'QA' && qaCourses.length > 0 ? (
+        <CourseQaPanel
+          currentUser={currentUser}
+          courses={qaCourses}
+          initialCourseId={defaultQaCourseId}
+        />
+      ) : loading ? (
         <div className="rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-8 text-center text-sm text-[var(--ak-muted)]">
           Loading communication channels...
         </div>

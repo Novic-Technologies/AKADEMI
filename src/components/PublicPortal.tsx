@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import QRCode from 'qrcode';
 import {
   AlertTriangle,
   ArrowRight,
+  Award,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -9,6 +11,7 @@ import {
   GraduationCap,
   Lock,
   Menu,
+  QrCode,
   Radio,
   Search,
   ShieldCheck,
@@ -26,6 +29,20 @@ import type {
   UserProfile,
 } from '../types/akademi';
 import { BrandMark, DEFAULT_BRAND_LOGO } from './BrandMark';
+
+interface PublicVerifiedCertificate {
+  id: string;
+  certificateCode: string;
+  learnerName: string;
+  courseTitle: string;
+  subject: string;
+  educationLevel: string;
+  issuerName: string;
+  institutionName?: string;
+  gradeLabel: string;
+  attendanceMinutes: number;
+  issuedAt: string;
+}
 
 interface PublicPortalProps {
   currentUser: UserProfile | null;
@@ -114,10 +131,61 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
   const [reqError, setReqError] = useState('');
   const [reqSuccess, setReqSuccess] = useState('');
 
+  // Public Certificate Verification
+  const [verifyCode, setVerifyCode] = useState('');
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifyError, setVerifyError] = useState('');
+  const [verifyResult, setVerifyResult] = useState<PublicVerifiedCertificate | null>(null);
+  const [verifyQrDataUrl, setVerifyQrDataUrl] = useState('');
+
+  const runCertificateLookup = async (rawCode: string, scrollIntoView = false) => {
+    const clean = rawCode.trim().toUpperCase();
+    if (!clean) return;
+    setVerifyLoading(true);
+    setVerifyError('');
+    setVerifyResult(null);
+    setVerifyQrDataUrl('');
+    try {
+      const res = await apiFetch<{ valid: boolean; certificate: PublicVerifiedCertificate }>(
+        `/api/public/verify-certificate/${encodeURIComponent(clean)}`
+      );
+      setVerifyResult(res.certificate);
+      const qrTarget = `${window.location.origin}/?verify=${encodeURIComponent(res.certificate.certificateCode)}`;
+      const qrDataUrl = await QRCode.toDataURL(qrTarget, {
+        width: 168,
+        margin: 1,
+        color: { dark: '#0C1B2E', light: '#F8F5EE' },
+      });
+      setVerifyQrDataUrl(qrDataUrl);
+      if (scrollIntoView) {
+        window.setTimeout(() => {
+          document.getElementById('verify-certificate')?.scrollIntoView({ behavior: 'smooth' });
+        }, 120);
+      }
+    } catch (err) {
+      setVerifyError(
+        err instanceof Error ? err.message : 'Unable to verify certificate code.'
+      );
+      if (scrollIntoView) {
+        window.setTimeout(() => {
+          document.getElementById('verify-certificate')?.scrollIntoView({ behavior: 'smooth' });
+        }, 120);
+      }
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
   useEffect(() => {
     apiFetch<PublicGatewayInfo>('/api/public/overview')
       .then(setGateway)
       .catch(() => {});
+    const params = new URLSearchParams(window.location.search);
+    const codeFromUrl = params.get('verify');
+    if (codeFromUrl) {
+      setVerifyCode(codeFromUrl.toUpperCase());
+      runCertificateLookup(codeFromUrl, true);
+    }
   }, []);
 
   const brandName = gateway?.platformName || 'Akademi';
@@ -250,6 +318,12 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               {t.navResources}
             </a>
             <a
+              href="#verify-certificate"
+              className="hover:text-[var(--ak-ink)] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
+            >
+              Verify Certificate
+            </a>
+            <a
               href="#how-it-works"
               className="hover:text-[var(--ak-ink)] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
             >
@@ -324,6 +398,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               <div className="grid gap-1.5 text-base font-medium text-[var(--ak-ink)] sm:grid-cols-2">
                 {[
                   ['#resources', t.navResources],
+                  ['#verify-certificate', 'Verify Certificate'],
                   ['#how-it-works', t.navHowItWorks],
                   ['#for-educators', t.navEducators],
                   ['#pricing', t.navPricing],
@@ -782,6 +857,128 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             ))}
           </div>
         )}
+      </section>
+
+      {/* 5b. Public Academic Certificate & QR Verification Registry */}
+      <section
+        id="verify-certificate"
+        className="border-t border-[var(--ak-divider)] bg-[var(--ak-surface)] py-14"
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="grid gap-8 lg:grid-cols-12">
+            <div className="space-y-3 lg:col-span-5">
+              <div className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ak-accent-ink)]">
+                <QrCode className="h-4 w-4" />
+                Employer &amp; Registrar Credential Registry
+              </div>
+              <h2 className="font-display text-3xl font-bold tracking-tight text-[var(--ak-ink)]">
+                Verify an Akademi Certificate
+              </h2>
+              <p className="text-base leading-relaxed text-[var(--ak-ink-2)]">
+                Every graduate who completes an approved course receives a QR-stamped PDF certificate.
+                Enter the verification code printed on the certificate (or scan its QR code) to confirm
+                authenticity without exposing confidential student contact data.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setVerifyCode('AKD-2026-8F4A9C');
+                  runCertificateLookup('AKD-2026-8F4A9C');
+                }}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--ak-accent-ink)] hover:underline"
+              >
+                Try sample verification code AKD-2026-8F4A9C →
+              </button>
+            </div>
+
+            <div className="space-y-4 lg:col-span-7">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  runCertificateLookup(verifyCode);
+                }}
+                className="flex flex-col gap-2.5 sm:flex-row"
+              >
+                <input
+                  type="text"
+                  value={verifyCode}
+                  onChange={(e) => setVerifyCode(e.target.value.toUpperCase())}
+                  placeholder="Enter certificate code (e.g. AKD-2026-8F4A9C)"
+                  className={fieldCls}
+                />
+                <button
+                  type="submit"
+                  disabled={verifyLoading || !verifyCode.trim()}
+                  className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-lg bg-[#C9642E] px-6 py-2.5 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] disabled:opacity-50 whitespace-nowrap"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  {verifyLoading ? 'Checking Registry...' : 'Verify Credential'}
+                </button>
+              </form>
+
+              {verifyError && (
+                <div className="rounded-xl border border-[var(--ak-err-bd)] bg-[var(--ak-err-bg)] px-4 py-3 text-sm font-medium text-[var(--ak-err-fg)]">
+                  {verifyError}
+                </div>
+              )}
+
+              {verifyResult && (
+                <div className="flex flex-col gap-5 rounded-xl border border-[var(--ak-ok-bd)] bg-[var(--ak-ok-bg)] p-6 sm:flex-row sm:items-center">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="inline-flex items-center gap-2 text-sm font-bold text-[var(--ak-ok-fg)]">
+                      <Award className="h-5 w-5" />
+                      VERIFIED AKADEMI ACADEMIC CREDENTIAL
+                    </div>
+                    <h3 className="font-display text-xl font-bold text-[var(--ak-ink)]">
+                      {verifyResult.learnerName}
+                    </h3>
+                    <p className="text-base font-semibold text-[var(--ak-ink-2)]">
+                      {verifyResult.courseTitle}
+                    </p>
+                    <div className="grid gap-1.5 pt-1 text-sm text-[var(--ak-ink-2)] sm:grid-cols-2">
+                      <span>
+                        <strong className="text-[var(--ak-ink)]">Code:</strong>{' '}
+                        <span className="font-mono">{verifyResult.certificateCode}</span>
+                      </span>
+                      <span>
+                        <strong className="text-[var(--ak-ink)]">Grade:</strong>{' '}
+                        {verifyResult.gradeLabel}
+                      </span>
+                      <span>
+                        <strong className="text-[var(--ak-ink)]">Level:</strong>{' '}
+                        {verifyResult.educationLevel}
+                      </span>
+                      <span>
+                        <strong className="text-[var(--ak-ink)]">Subject:</strong>{' '}
+                        {verifyResult.subject}
+                      </span>
+                      <span>
+                        <strong className="text-[var(--ak-ink)]">Issuer:</strong>{' '}
+                        {verifyResult.institutionName || verifyResult.issuerName}
+                      </span>
+                      <span>
+                        <strong className="text-[var(--ak-ink)]">Issued:</strong>{' '}
+                        {new Date(verifyResult.issuedAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  {verifyQrDataUrl && (
+                    <div className="flex flex-col items-center gap-1.5 rounded-lg border border-[var(--ak-border)] bg-[#F8F5EE] p-3 text-center shrink-0">
+                      <img
+                        src={verifyQrDataUrl}
+                        alt={`QR verification for ${verifyResult.certificateCode}`}
+                        className="h-32 w-32"
+                      />
+                      <span className="font-mono text-[11px] font-semibold text-[#0C1B2E]">
+                        {verifyResult.certificateCode}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* 6. Live Sessions Highlight */}
@@ -1523,6 +1720,14 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 <li>
                   <a href="#resources" className="hover:text-[var(--ak-accent-ink)] hover:underline">
                     {t.navResources}
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="#verify-certificate"
+                    className="hover:text-[var(--ak-accent-ink)] hover:underline"
+                  >
+                    Verify Certificate
                   </a>
                 </li>
                 <li>

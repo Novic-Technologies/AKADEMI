@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Award,
   BookOpen,
   CheckCircle2,
+  Clock,
   CreditCard,
   Download,
   Edit3,
@@ -18,21 +20,26 @@ import {
   UserCheck,
   X,
 } from 'lucide-react';
-import { apiFetch, fetchAuthorizedBlob } from '../lib/api';
+import { apiFetch, createAkademiSocket, fetchAuthorizedBlob } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import type {
+  CertificateRecord,
   CourseItem,
   EnrollmentRecord,
   LearnerAcademicDoc,
   LedgerTransaction,
   LiveSession,
+  QuizAttempt,
+  QuizItem,
   ResourceItem,
   UserProfile,
 } from '../types/akademi';
 import { CommunicationPanel } from './CommunicationPanel';
 import { ContentInspectorModal, type InspectedContent } from './ContentInspectorModal';
+import { CourseQaPanel } from './CourseQaPanel';
 import { DashboardShell } from './DashboardShell';
 import { LiveClassroomModal } from './LiveClassroomModal';
+import { QuizRunnerModal } from './QuizRunnerModal';
 
 interface LearnerDashboardProps {
   currentUser: UserProfile;
@@ -74,6 +81,9 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
   const [sessions, setSessions] = useState<CatalogSession[]>([]);
   const [academicDocs, setAcademicDocs] = useState<LearnerAcademicDoc[]>([]);
   const [enrollments, setEnrollments] = useState<EnrollmentRecord[]>([]);
+  const [certificates, setCertificates] = useState<CertificateRecord[]>([]);
+  const [quizzes, setQuizzes] = useState<QuizItem[]>([]);
+  const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>([]);
   const [transactions, setTransactions] = useState<LedgerTransaction[]>([]);
   const [educationLevels, setEducationLevels] = useState<string[]>([
     'UNEB PLE (Primary Leaving)',
@@ -99,6 +109,8 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
   const [inspected, setInspected] = useState<InspectedContent | null>(null);
   const [inspectCreator, setInspectCreator] = useState<CatalogCreator | null>(null);
   const [inspectCourse, setInspectCourse] = useState<CatalogCourse | null>(null);
+  const [activeQuiz, setActiveQuiz] = useState<QuizItem | null>(null);
+  const [qaCourseModal, setQaCourseModal] = useState<CatalogCourse | null>(null);
   const [messageRecipientId, setMessageRecipientId] = useState('');
 
   // Inline confirmation states (no window.confirm)
@@ -126,7 +138,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
     setLoading(true);
     setError('');
     try {
-      const [catalog, ws] = await Promise.all([
+      const [catalog, ws, certRes, quizRes] = await Promise.all([
         apiFetch<{
           creators: CatalogCreator[];
           resources: CatalogResource[];
@@ -139,6 +151,12 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
           transactions: LedgerTransaction[];
           educationLevels?: string[];
         }>('/api/learner/workspace'),
+        apiFetch<{ certificates: CertificateRecord[] }>('/api/certificates/mine').catch(() => ({
+          certificates: [] as CertificateRecord[],
+        })),
+        apiFetch<{ quizzes: QuizItem[]; attempts: QuizAttempt[] }>('/api/quizzes/mine').catch(
+          () => ({ quizzes: [] as QuizItem[], attempts: [] as QuizAttempt[] })
+        ),
       ]);
       setCreators(catalog.creators);
       setResources(catalog.resources);
@@ -146,6 +164,9 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
       setSessions(catalog.liveSessions);
       setAcademicDocs(ws.academicDocs);
       setEnrollments(ws.enrollments);
+      setCertificates(certRes.certificates);
+      setQuizzes(quizRes.quizzes);
+      setQuizAttempts(quizRes.attempts);
       setTransactions(ws.transactions);
       if (ws.educationLevels && ws.educationLevels.length > 0) {
         setEducationLevels(ws.educationLevels);
@@ -159,6 +180,25 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
   useEffect(() => {
     loadAll();
+  }, [currentUser.id]);
+
+  useEffect(() => {
+    const ws = createAkademiSocket((event, payload) => {
+      if (event === 'certificate:issued') {
+        const cert = payload.certificate as CertificateRecord | undefined;
+        if (cert) {
+          setNotice(
+            `Certificate unlocked for ${cert.courseTitle}: Code ${cert.certificateCode}`
+          );
+        }
+        loadAll();
+      } else if (event === 'enrollment:updated') {
+        loadAll();
+      }
+    });
+    return () => {
+      ws?.close();
+    };
   }, [currentUser.id]);
 
   const openMessageEducator = (recipientId: string) => {
@@ -319,6 +359,49 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
     }
   };
 
+  const handleOpenCertificate = async (certificateId: string, download = false) => {
+    setError('');
+    try {
+      const cert = certificates.find(
+        (c) => c.id === certificateId || c.certificateCode === certificateId
+      );
+      const blob = await fetchAuthorizedBlob(
+        `/api/files/certificate/${encodeURIComponent(certificateId)}${download ? '?download=1' : ''}`
+      );
+      const pdfName = `${cert?.certificateCode || certificateId}.pdf`;
+      if (download) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = pdfName;
+        a.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+      setInspected({
+        title: cert ? `Certificate of Completion — ${cert.courseTitle}` : 'Akademi Certificate',
+        subtitle: cert
+          ? `${cert.learnerName} · Code ${cert.certificateCode} · Issued by ${cert.issuerName}`
+          : 'Verified Akademi Credential',
+        fileName: pdfName,
+        mimeType: 'application/pdf',
+        objectUrl: URL.createObjectURL(blob),
+        blob,
+        canDownload: true,
+        metadata: cert
+          ? [
+              { label: 'Verification Code', value: cert.certificateCode },
+              { label: 'Course', value: cert.courseTitle },
+              { label: 'Grade', value: cert.gradeLabel || 'Completed' },
+              { label: 'Issued', value: new Date(cert.issuedAt).toLocaleDateString() },
+            ]
+          : undefined,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to open certificate PDF.');
+    }
+  };
+
   const handleToggleProgress = async (
     courseId: string,
     resourceId: string,
@@ -326,10 +409,18 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
   ) => {
     setError('');
     try {
-      await apiFetch('/api/learner/progress', {
+      const res = await apiFetch<{
+        enrollment?: EnrollmentRecord;
+        issuedCertificate?: CertificateRecord | null;
+      }>('/api/learner/progress', {
         method: 'POST',
         body: JSON.stringify({ courseId, resourceId, completed: nextCompleted }),
       });
+      if (res.issuedCertificate) {
+        setNotice(
+          `Congratulations! Certificate ${res.issuedCertificate.certificateCode} issued for ${res.issuedCertificate.courseTitle}.`
+        );
+      }
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update progress.');
@@ -903,10 +994,65 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
             )}
 
             {tab === 'MY_COURSES' && (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <h2 className="text-lg font-semibold text-[var(--ak-ink)]">
-                  My Education Journey &amp; Enrolled Courses
+                  My Education Journey, Quizzes &amp; Verifiable Certificates
                 </h2>
+
+                {certificates.length > 0 && (
+                  <section className="space-y-3 rounded-xl border border-[var(--ak-ok-bd)] bg-[var(--ak-ok-bg)] p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Award className="h-5 w-5 text-[var(--ak-ok-fg)]" />
+                        <h3 className="text-base font-semibold text-[var(--ak-ink)]">
+                          Earned Verifiable Certificates ({certificates.length})
+                        </h3>
+                      </div>
+                      <span className="text-xs text-[var(--ak-muted)]">
+                        Includes scannable QR verification code for employers &amp; registrars
+                      </span>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {certificates.map((cert) => (
+                        <div
+                          key={cert.id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-surface)] p-4 text-sm"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-[var(--ak-ink)] truncate">
+                              {cert.courseTitle}
+                            </p>
+                            <p className="mt-0.5 font-mono text-xs font-semibold text-[var(--ak-accent-ink)]">
+                              Code: {cert.certificateCode} · Grade {cert.gradeLabel}
+                            </p>
+                            <p className="mt-0.5 text-xs text-[var(--ak-muted)]">
+                              Issued {new Date(cert.issuedAt).toLocaleDateString()} by {cert.issuerName}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenCertificate(cert.id, false)}
+                              className="inline-flex items-center gap-1 rounded-md border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-2.5 py-1.5 text-xs font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)]"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              Inspect QR PDF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenCertificate(cert.id, true)}
+                              className="inline-flex items-center gap-1 rounded-md bg-[#C9642E] px-2.5 py-1.5 text-xs font-semibold text-[#F8F5EE] hover:bg-[#D8733C]"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              Download
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
                 {enrollments.length === 0 ? (
                   <div className="rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-8 text-center text-sm text-[var(--ak-muted)]">
                     You have not requested any course enrollments yet. Browse courses to start.
@@ -917,6 +1063,12 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
                     const courseResources = resources.filter((r) =>
                       course?.resourceIds.includes(r.id)
                     );
+                    const courseQuizzes = quizzes.filter((q) => q.courseId === enr.courseId);
+                    const courseCert =
+                      certificates.find((c) => c.courseId === enr.courseId) ||
+                      (enr.certificateId
+                        ? { id: enr.certificateId, certificateCode: enr.certificateCode || '' }
+                        : null);
                     return (
                       <div
                         key={enr.id}
@@ -969,6 +1121,16 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
                         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                           <div className="flex flex-wrap items-center gap-2">
+                            {course && enr.academicStatus === 'APPROVED' && (
+                              <button
+                                type="button"
+                                onClick={() => setQaCourseModal(course)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-3 py-1.5 text-xs font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)]"
+                              >
+                                <MessageSquare className="h-3.5 w-3.5 text-[var(--ak-accent-ink)]" />
+                                Course Q&amp;A &amp; Office Hours
+                              </button>
+                            )}
                             {course && (
                               <button
                                 type="button"
@@ -978,6 +1140,26 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
                                 <MessageSquare className="h-3.5 w-3.5" />
                                 Message Educator ({course.ownerName})
                               </button>
+                            )}
+                            {courseCert && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCertificate(courseCert.id, false)}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600"
+                                >
+                                  <Award className="h-3.5 w-3.5" />
+                                  Inspect Certificate ({courseCert.certificateCode || 'PDF'})
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCertificate(courseCert.id, true)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--ak-ok-bd)] bg-[var(--ak-ok-bg)] px-2.5 py-1.5 text-xs font-semibold text-[var(--ak-ok-fg)]"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  PDF
+                                </button>
+                              </>
                             )}
                             {enr.academicStatus === 'REJECTED' && course && (
                               <button
@@ -1067,6 +1249,62 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
                                 </div>
                               );
                             })}
+                          </div>
+                        )}
+
+                        {enr.academicStatus === 'APPROVED' && courseQuizzes.length > 0 && (
+                          <div className="space-y-2 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-recessed)] p-3.5">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--ak-muted)]">
+                              Timed Assessments &amp; Past-Paper Drills ({courseQuizzes.length})
+                            </p>
+                            <div className="divide-y divide-[var(--ak-divider)] rounded-lg border border-[var(--ak-border)] bg-[var(--ak-surface)]">
+                              {courseQuizzes.map((qz) => {
+                                const myAttempts = quizAttempts.filter((a) => a.quizId === qz.id);
+                                const bestAttempt = myAttempts.sort(
+                                  (a, b) => b.percentScore - a.percentScore
+                                )[0];
+                                return (
+                                  <div
+                                    key={qz.id}
+                                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--ak-accent-ink)] font-semibold">
+                                        <span>{qz.curriculumTag}</span>
+                                        {qz.isPastPaper && <span>· Past-Paper Drill</span>}
+                                        <span className="inline-flex items-center gap-1 font-mono text-[var(--ak-muted)] font-normal">
+                                          <Clock className="h-3 w-3" />
+                                          {qz.timeLimitMinutes} min · {qz.questions.length} Qs
+                                        </span>
+                                      </div>
+                                      <p className="mt-0.5 font-semibold text-[var(--ak-ink)]">
+                                        {qz.title}
+                                      </p>
+                                      {bestAttempt && (
+                                        <p
+                                          className={`mt-0.5 font-mono text-xs font-semibold ${
+                                            bestAttempt.passed
+                                              ? 'text-[var(--ak-ok-fg)]'
+                                              : 'text-[var(--ak-warn-fg)]'
+                                          }`}
+                                        >
+                                          Best Score: {bestAttempt.percentScore}% ({bestAttempt.gradeLabel}) ·{' '}
+                                          {bestAttempt.passed ? 'PASSED' : `Pass requires ${qz.passingPercent}%`}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveQuiz(qz)}
+                                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#C9642E] px-3.5 py-2 text-xs font-semibold text-[#F8F5EE] hover:bg-[#D8733C] shrink-0"
+                                    >
+                                      <Play className="h-3.5 w-3.5" />
+                                      {bestAttempt ? 'Retake / Review' : 'Start Timed Quiz'}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1436,6 +1674,13 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
                 currentUser={currentUser}
                 defaultTab="THREADS"
                 initialRecipientId={messageRecipientId}
+                qaCourses={courses
+                  .filter((c) => c.myEnrollment?.academicStatus === 'APPROVED')
+                  .map((c) => ({
+                    id: c.id,
+                    title: c.title,
+                    subject: c.subject,
+                  }))}
                 availableRecipients={creators.map((c) => ({
                   id: c.id,
                   name: c.name,
@@ -1759,6 +2004,47 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {activeQuiz && (
+        <QuizRunnerModal
+          quiz={activeQuiz}
+          existingAttempt={quizAttempts
+            .filter((a) => a.quizId === activeQuiz.id)
+            .sort((a, b) => b.percentScore - a.percentScore)[0]}
+          onClose={() => setActiveQuiz(null)}
+          onSubmitted={async (res) => {
+            if (res.issuedCertificate) {
+              setNotice(
+                `Certificate ${res.issuedCertificate.certificateCode} unlocked for ${res.issuedCertificate.courseTitle}!`
+              );
+            }
+            await loadAll();
+          }}
+          onOpenCertificate={(certificateId) => {
+            setActiveQuiz(null);
+            handleOpenCertificate(certificateId, false);
+          }}
+        />
+      )}
+
+      {qaCourseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ak-backdrop)] p-4 backdrop-blur-xs">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[var(--ak-border)] bg-[var(--ak-canvas)] p-5 shadow-2xl">
+            <CourseQaPanel
+              currentUser={currentUser}
+              courses={[
+                {
+                  id: qaCourseModal.id,
+                  title: qaCourseModal.title,
+                  subject: qaCourseModal.subject,
+                },
+              ]}
+              initialCourseId={qaCourseModal.id}
+              onClose={() => setQaCourseModal(null)}
+            />
+          </div>
         </div>
       )}
 

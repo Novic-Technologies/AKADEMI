@@ -4,7 +4,9 @@ import path from 'path';
 import type {
   AccountRequest,
   AuditLogEntry,
+  CertificateRecord,
   CourseItem,
+  CourseQaThread,
   DirectMessageThread,
   EnrollmentRecord,
   KycSubmission,
@@ -13,6 +15,8 @@ import type {
   LiveSession,
   OutboxEmail,
   PublicGatewayInfo,
+  QuizAttempt,
+  QuizItem,
   ResourceItem,
   SupportTicket,
   UserProfile,
@@ -37,9 +41,13 @@ export interface AkademiDatabase {
   outboxEmails: OutboxEmail[];
   auditLogs: AuditLogEntry[];
   ledger: LedgerTransaction[];
+  courseQaThreads: CourseQaThread[];
+  certificates: CertificateRecord[];
+  quizzes: QuizItem[];
+  quizAttempts: QuizAttempt[];
 }
 
-export const CURRENT_SEED_VERSION = 6;
+export const CURRENT_SEED_VERSION = 8;
 export const DATA_DIR = path.resolve(process.cwd(), 'data');
 export const UPLOAD_DIR = path.resolve(DATA_DIR, 'uploads');
 const DB_FILE = path.resolve(DATA_DIR, 'akademi-db.json');
@@ -727,7 +735,7 @@ export function createSeedDatabase(): AkademiDatabase {
   };
 
   const learnerKwabena: StoredUser = {
-    id: 'usr-learner-lucas',
+    id: 'usr-learner-kwabena',
     email: 'kwabena.boateng@student.akademi.tech',
     name: 'Kwabena Boateng',
     role: 'LEARNER',
@@ -1151,7 +1159,7 @@ export function createSeedDatabase(): AkademiDatabase {
       coverImage: '/src/assets/images/course_data_science_1795613120523.jpg',
       resourceIds: ['res-pdf-bayesian', 'res-video-finite-element', 'res-book-ml-compendium'],
       requiresAcademicVerification: true,
-      enrolledLearnerIds: ['usr-learner-amara'],
+      enrolledLearnerIds: ['usr-learner-amara', 'usr-learner-kwabena'],
       createdAt: '2026-09-10T08:00:00.000Z',
       status: 'ACTIVE',
     },
@@ -1319,6 +1327,30 @@ export function createSeedDatabase(): AkademiDatabase {
       attendanceMinutes: 0,
       requestedAt: '2026-11-24T15:30:00.000Z',
     },
+    {
+      id: 'enr-005',
+      courseId: 'crs-applied-ml',
+      courseTitle: 'Computational Statistics & Applied Machine Learning',
+      learnerId: 'usr-learner-kwabena',
+      learnerName: 'Kwabena Boateng',
+      learnerDeclaredLevel: 'NCHE Undergraduate (Year 3)',
+      ownerId: 'usr-dr-okello',
+      verifierRoleRequired: 'SOLO_EDUCATOR',
+      academicStatus: 'APPROVED',
+      academicNote: 'Completed full syllabus, live seminars, and calibration assessment.',
+      progressPercent: 100,
+      completedResourceIds: [
+        'res-pdf-bayesian',
+        'res-video-finite-element',
+        'res-book-ml-compendium',
+      ],
+      attendanceMinutes: 140,
+      gradeLabel: 'A',
+      certificateId: 'cert-001',
+      certificateCode: 'AKD-2026-8F4A9C',
+      requestedAt: '2026-09-10T10:00:00.000Z',
+      verifiedAt: '2026-09-10T14:20:00.000Z',
+    },
   ];
 
   const liveSessions: LiveSession[] = [
@@ -1330,7 +1362,7 @@ export function createSeedDatabase(): AkademiDatabase {
       hostName: 'Dr. Samuel Okello',
       title: 'Live Seminar: Posterior Predictive Checks & Model Calibration',
       topicSummary:
-        'Interactive walkthrough of diagnostic plots with live Q&A and workbook distribution.',
+        'Interactive walkthrough of diagnostic plots with live Q&A, shared whiteboard, and comprehension polls.',
       scheduledAt: now,
       durationMinutes: 60,
       accessRule: 'ENROLLED_ONLY',
@@ -1355,8 +1387,25 @@ export function createSeedDatabase(): AkademiDatabase {
           senderId: 'usr-dr-okello',
           senderName: 'Dr. Samuel Okello',
           senderRole: 'SOLO_EDUCATOR',
-          text: 'Welcome to the live seminar. I have pinned the Bayesian Inference Workbook in the Session Materials drawer.',
+          text: 'Welcome to the live seminar. I have pinned the Bayesian Inference Workbook in the Session Materials drawer and opened a live comprehension poll.',
           timestamp: '2026-11-25T05:02:00.000Z',
+        },
+      ],
+      whiteboardStrokes: [],
+      boardPointer: null,
+      polls: [
+        {
+          id: 'poll-seed-1',
+          question: 'Which prior family is conjugate to a Binomial likelihood?',
+          options: [
+            { id: 'opt-1', text: 'Beta Distribution', voterIds: ['usr-learner-kwabena'] },
+            { id: 'opt-2', text: 'Poisson Distribution', voterIds: [] },
+            { id: 'opt-3', text: 'Uniform Discrete Only', voterIds: [] },
+          ],
+          createdById: 'usr-dr-okello',
+          createdByName: 'Dr. Samuel Okello',
+          isOpen: true,
+          createdAt: '2026-11-25T05:03:00.000Z',
         },
       ],
     },
@@ -1645,6 +1694,256 @@ export function createSeedDatabase(): AkademiDatabase {
     },
   ];
 
+  const courseQaThreads: CourseQaThread[] = [
+    {
+      id: 'qa-001',
+      courseId: 'crs-applied-ml',
+      courseTitle: 'Computational Statistics & Applied Machine Learning',
+      authorId: 'usr-learner-amara',
+      authorName: 'Amara Kato',
+      authorRole: 'LEARNER',
+      title: 'Choosing Beta prior hyperparameters alpha and beta for small cohort studies',
+      body: 'In Section 3 of the Bayesian workbook, when sample size n is under 20, should we use weakly informative Beta(2, 2) instead of uniform Beta(1, 1)? Tagging @Dr. Samuel Okello for guidance.',
+      mentions: ['Dr. Samuel Okello'],
+      upvoterIds: ['usr-learner-kwabena', 'usr-dr-okello'],
+      isPinned: true,
+      isOfficeHour: false,
+      createdAt: '2026-11-22T14:20:00.000Z',
+      updatedAt: '2026-11-22T16:10:00.000Z',
+      replies: [
+        {
+          id: 'qar-001',
+          threadId: 'qa-001',
+          authorId: 'usr-learner-kwabena',
+          authorName: 'Kwabena Boateng',
+          authorRole: 'LEARNER',
+          body: 'I tested both in R and Beta(2,2) prevented extreme boundary estimates when observed successes were 0.',
+          mentions: [],
+          upvoterIds: ['usr-learner-amara'],
+          isInstructorVerified: false,
+          createdAt: '2026-11-22T15:05:00.000Z',
+        },
+        {
+          id: 'qar-002',
+          threadId: 'qa-001',
+          authorId: 'usr-dr-okello',
+          authorName: 'Dr. Samuel Okello',
+          authorRole: 'SOLO_EDUCATOR',
+          body: 'Great observation @Kwabena Boateng and @Amara Kato. Beta(2, 2) introduces gentle Laplace-style regularization worth 2 pseudo-successes and 2 pseudo-failures, stabilizing posterior credible intervals on small clinical cohorts.',
+          mentions: ['Kwabena Boateng', 'Amara Kato'],
+          upvoterIds: ['usr-learner-amara', 'usr-learner-kwabena'],
+          isInstructorVerified: true,
+          verifiedByName: 'Dr. Samuel Okello',
+          createdAt: '2026-11-22T16:10:00.000Z',
+        },
+      ],
+    },
+    {
+      id: 'qa-002',
+      courseId: 'crs-applied-ml',
+      courseTitle: 'Computational Statistics & Applied Machine Learning',
+      authorId: 'usr-dr-okello',
+      authorName: 'Dr. Samuel Okello',
+      authorRole: 'SOLO_EDUCATOR',
+      title: 'Weekly Instructor Office Hours: Model Diagnostics & Past Paper Clinic',
+      body: 'Post your derivation steps or posterior plot questions below ahead of Thursday clinic. @Amara Kato and cohort members welcome to drop worked attempts here.',
+      mentions: ['Amara Kato'],
+      upvoterIds: ['usr-learner-amara'],
+      isPinned: true,
+      isOfficeHour: true,
+      officeHourSlot: 'Thursdays 16:00 - 17:30 EAT (Kampala)',
+      createdAt: '2026-11-24T09:00:00.000Z',
+      updatedAt: '2026-11-24T09:00:00.000Z',
+      replies: [],
+    },
+    {
+      id: 'qa-003',
+      courseId: 'crs-bio-microscopy',
+      courseTitle: 'Quantitative Cellular Microscopy & Lab Methods',
+      authorId: 'usr-staff-claire',
+      authorName: 'Prof. Claire Namono (St. Marks)',
+      authorRole: 'COURSE_ADMIN',
+      title: 'Office Hours: Brightfield Immersion Oil & Calibration Lab Questions',
+      body: 'Use this thread before Friday bench practicals to verify magnification calibration factors or ask about xylem/phloem slide preparation.',
+      mentions: [],
+      upvoterIds: ['usr-learner-amara'],
+      isPinned: true,
+      isOfficeHour: true,
+      officeHourSlot: 'Fridays 10:00 - 11:30 EAT (St. Marks Lab 2)',
+      createdAt: '2026-11-23T11:30:00.000Z',
+      updatedAt: '2026-11-23T11:30:00.000Z',
+      replies: [],
+    },
+  ];
+
+  const certificates: CertificateRecord[] = [
+    {
+      id: 'cert-001',
+      certificateCode: 'AKD-2026-8F4A9C',
+      enrollmentId: 'enr-005',
+      courseId: 'crs-applied-ml',
+      courseTitle: 'Computational Statistics & Applied Machine Learning',
+      subject: 'Data Science',
+      educationLevel: 'NCHE Undergraduate (Year 1–4)',
+      learnerId: 'usr-learner-kwabena',
+      learnerName: 'Kwabena Boateng',
+      issuerId: 'usr-dr-okello',
+      issuerName: 'Dr. Samuel Okello',
+      gradeLabel: 'A',
+      attendanceMinutes: 140,
+      issuedAt: '2026-11-18T12:00:00.000Z',
+    },
+  ];
+
+  const quizzes: QuizItem[] = [
+    {
+      id: 'quiz-ml-calibration',
+      courseId: 'crs-applied-ml',
+      courseTitle: 'Computational Statistics & Applied Machine Learning',
+      ownerId: 'usr-dr-okello',
+      ownerName: 'Dr. Samuel Okello',
+      title: 'NCHE Quantitative Inference & Bayesian Calibration Assessment',
+      curriculumTag: 'NCHE',
+      description:
+        'Timed checkpoint covering conjugate priors, posterior predictive checks, and bias-variance trade-offs with step-by-step worked derivations.',
+      timeLimitMinutes: 15,
+      passingPercent: 60,
+      isPastPaper: false,
+      published: true,
+      createdAt: '2026-11-10T09:00:00.000Z',
+      questions: [
+        {
+          id: 'q-ml-1',
+          prompt:
+            'If a Binomial likelihood has k = 7 successes in n = 10 trials and the prior is Beta(2, 2), what is the exact posterior distribution?',
+          kind: 'MCQ',
+          options: [
+            'Beta(9, 5)',
+            'Beta(7, 10)',
+            'Beta(9, 12)',
+            'Normal(0.7, 0.2)',
+          ],
+          correctOptionIndex: 0,
+          workedSolution:
+            'Step 1: For a Beta(alpha, beta) prior and Binomial(n, p) likelihood with k successes, posterior parameters are alpha_post = alpha + k and beta_post = beta + (n - k).\nStep 2: alpha_post = 2 + 7 = 9, beta_post = 2 + (10 - 7) = 5.\nConclusion: The exact posterior is Beta(9, 5).',
+          marks: 4,
+        },
+        {
+          id: 'q-ml-2',
+          prompt:
+            'What does a Bayesian posterior predictive p-value close to 0.50 indicate about model fit?',
+          kind: 'MCQ',
+          options: [
+            'The model reproduces the chosen test statistic consistently with observed data',
+            'The prior variance must be zero',
+            'Overfitting is guaranteed on unseen samples',
+            'Gradient descent failed to converge',
+          ],
+          correctOptionIndex: 0,
+          workedSolution:
+            'Step 1: Posterior predictive checks compare test statistics T(y_rep) from replicated data against observed T(y).\nStep 2: Values near 0 or 1 indicate systematic misfit; a value near 0.50 means replicated data aligns with observed patterns.',
+          marks: 3,
+        },
+        {
+          id: 'q-ml-3',
+          prompt:
+            'Structured Question: Briefly explain why cross-validation or regularization is required when polynomial degree increases in regression.',
+          kind: 'STRUCTURED',
+          acceptedKeywords: ['variance', 'overfitting', 'generalization'],
+          sampleAnswer:
+            'Higher-degree polynomials dramatically increase model variance, causing overfitting to training noise and poor out-of-sample generalization unless controlled with regularization or cross-validation.',
+          workedSolution:
+            'Marking Scheme (3 marks):\n1. Identify overfitting to training noise (1 mark).\n2. Mention elevated model variance / bias-variance trade-off (1 mark).\n3. Note generalization error on unseen test data / how regularization penalizes large coefficients (1 mark).',
+          marks: 3,
+        },
+      ],
+    },
+    {
+      id: 'quiz-uneb-math-pastpaper',
+      courseId: 'crs-applied-ml',
+      courseTitle: 'Computational Statistics & Applied Machine Learning',
+      ownerId: 'usr-dr-okello',
+      ownerName: 'Dr. Samuel Okello',
+      title: 'UNEB UCE / UACE Foundation Probability & Matrices Past-Paper Drill',
+      curriculumTag: 'UNEB UACE',
+      description:
+        'Timed UNEB past-paper style quantitative drill testing conditional probability, matrix determinants, and variance calculations.',
+      timeLimitMinutes: 20,
+      passingPercent: 50,
+      isPastPaper: true,
+      published: true,
+      createdAt: '2026-11-15T10:00:00.000Z',
+      questions: [
+        {
+          id: 'q-uneb-1',
+          prompt:
+            'Given matrix A = [[3, 2], [1, 4]], compute the determinant det(A).',
+          kind: 'MCQ',
+          options: ['10', '14', '5', '12'],
+          correctOptionIndex: 0,
+          workedSolution:
+            'Step 1: For a 2x2 matrix [[a, b], [c, d]], det(A) = (a * d) - (b * c).\nStep 2: det(A) = (3 * 4) - (2 * 1) = 12 - 2 = 10.',
+          marks: 3,
+        },
+        {
+          id: 'q-uneb-2',
+          prompt:
+            'Structured Past-Paper Problem: A bag contains 5 blue pens and 3 red pens. Two pens are drawn without replacement. State the probability both are blue (express as a simplified fraction) and explain why the second draw is dependent.',
+          kind: 'STRUCTURED',
+          acceptedKeywords: ['5/14', 'without replacement', 'dependent'],
+          sampleAnswer:
+            'P(both blue) = (5/8) * (4/7) = 20/56 = 5/14. Because drawing is without replacement, the first draw changes the remaining sample space from 8 to 7, making the events dependent.',
+          workedSolution:
+            'Step 1: P(First Blue) = 5/8.\nStep 2: Remaining blue pens = 4, total remaining = 7, so P(Second Blue | First Blue) = 4/7 (dependent event because draws are without replacement).\nStep 3: P(Both Blue) = (5/8) * (4/7) = 20/56 = 5/14.',
+          marks: 5,
+        },
+      ],
+    },
+    {
+      id: 'quiz-bio-microscopy-lab',
+      courseId: 'crs-bio-microscopy',
+      courseTitle: 'Quantitative Cellular Microscopy & Lab Methods',
+      ownerId: 'usr-inst-stmarks',
+      ownerName: 'St. Marks Polytechnic',
+      title: 'UBTEB / NCHE Brightfield Microscopy & Cellular Staining Check',
+      curriculumTag: 'UBTEB',
+      description:
+        'Pre-laboratory verification quiz on total magnification, numerical aperture, and Gram/vascular staining controls.',
+      timeLimitMinutes: 12,
+      passingPercent: 60,
+      isPastPaper: false,
+      published: true,
+      createdAt: '2026-11-16T08:30:00.000Z',
+      questions: [
+        {
+          id: 'q-bio-1',
+          prompt:
+            'A compound microscope uses a 10x ocular lens and a 40x objective lens. What is the total magnification?',
+          kind: 'MCQ',
+          options: ['400x', '50x', '4000x', '140x'],
+          correctOptionIndex: 0,
+          workedSolution:
+            'Step 1: Total Magnification = Ocular Magnification x Objective Magnification.\nStep 2: 10 x 40 = 400x.',
+          marks: 4,
+        },
+        {
+          id: 'q-bio-2',
+          prompt:
+            'Structured Question: Why is immersion oil placed between a 100x objective lens and the glass slide?',
+          kind: 'STRUCTURED',
+          acceptedKeywords: ['refraction', 'refractive index', 'resolution'],
+          sampleAnswer:
+            'Immersion oil has nearly the same refractive index as glass (~1.51), minimizing light refraction at the air-glass boundary and maximizing numerical aperture and image resolution.',
+          workedSolution:
+            'Step 1: Air has a refractive index of 1.00 while glass is ~1.51, causing light rays to bend away from the narrow 100x lens.\nStep 2: Immersion oil matches glass refractive index, reducing refraction loss and increasing effective resolution.',
+          marks: 4,
+        },
+      ],
+    },
+  ];
+
+  const quizAttempts: QuizAttempt[] = [];
+
   return {
     seedVersion: CURRENT_SEED_VERSION,
     users: [
@@ -1676,6 +1975,10 @@ export function createSeedDatabase(): AkademiDatabase {
     outboxEmails,
     auditLogs,
     ledger,
+    courseQaThreads,
+    certificates,
+    quizzes,
+    quizAttempts,
   };
 }
 
@@ -1694,6 +1997,10 @@ export function loadDatabase(): AkademiDatabase {
       saveDatabase(seeded);
       return seeded;
     }
+    parsed.courseQaThreads = parsed.courseQaThreads || [];
+    parsed.certificates = parsed.certificates || [];
+    parsed.quizzes = parsed.quizzes || [];
+    parsed.quizAttempts = parsed.quizAttempts || [];
     return parsed;
   } catch {
     const seeded = createSeedDatabase();
