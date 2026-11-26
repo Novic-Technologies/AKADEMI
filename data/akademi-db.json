@@ -316,7 +316,7 @@
       "role": "LEARNER",
       "bio": "Undergraduate quantitative biology student in Kampala tracking data science and microscopy coursework.",
       "specialization": "Quantitative Biology & Data Science",
-      "educationLevel": "NCHE Undergraduate (Year 1–4)",
+      "educationLevel": "NCHE Undergraduate (Year 1-4)",
       "country": "Uganda",
       "educationSystem": "NCHE Uganda",
       "mustChangePassword": false,
@@ -553,7 +553,7 @@
       "fileSizeLabel": "4.2 MB",
       "previewSummary": "Chapter 1: Likelihood Functions and Prior Sensitivity\nChapter 2: Markov Chain Convergence Diagnostics\nWorked Exercises: 18 solved problems with numerical tables.",
       "downloadsCount": 413,
-      "viewsCount": 1294,
+      "viewsCount": 1295,
       "createdAt": "2026-09-12T08:00:00.000Z",
       "status": "PUBLISHED"
     },
@@ -593,8 +593,8 @@
       "fileName": "Microscopy_Lab_Report_Template.docx",
       "fileSizeLabel": "1.1 MB",
       "previewSummary": "Includes equipment calibration checklist, slide preparation steps, and standardized observation tables.",
-      "downloadsCount": 235,
-      "viewsCount": 542,
+      "downloadsCount": 236,
+      "viewsCount": 543,
       "createdAt": "2026-09-28T14:00:00.000Z",
       "status": "PUBLISHED"
     },
@@ -1241,6 +1241,16 @@
     }
   ],
   "auditLogs": [
+    {
+      "id": "aud-872568b5",
+      "actorId": "usr-learner-amara",
+      "actorName": "Amara Kato",
+      "action": "ACADEMIC_DOC_DELETED",
+      "targetType": "USER",
+      "targetId": "usr-learner-amara",
+      "details": "Amara Kato deleted academic doc \"Valid Transcript\".",
+      "timestamp": "2026-11-25T22:40:14.924Z"
+    },
     {
       "id": "aud-2d77c8dc",
       "actorId": "usr-dr-okello",

@@ -2669,19 +2669,23 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   const { lang, setLang } = useI18n();
   return (
     <label
-      className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#C8BFA8] bg-[#EFECE3] px-2.5 py-1.5 text-sm text-[#0C1B2E] ${className}`}
+      className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-2.5 py-1.5 text-sm text-[var(--ak-ink)] ${className}`}
     >
-      <Globe className="h-4 w-4 shrink-0 text-[#A44A1C]" />
+      <Globe className="h-4 w-4 shrink-0 text-[var(--ak-accent-ink)]" />
       <select
         aria-label="Language"
         value={lang}
         onChange={(e) => setLang(e.target.value as LangCode)}
-        className={`bg-transparent text-sm font-semibold text-[#0C1B2E] focus:outline-none ${
+        className={`bg-transparent text-sm font-semibold text-[var(--ak-ink)] focus:outline-none ${
           compact ? 'max-w-[110px]' : ''
         }`}
       >
         {LANGUAGES.map((l) => (
-          <option key={l.code} value={l.code}>
+          <option
+            key={l.code}
+            value={l.code}
+            className="bg-[var(--ak-surface)] text-[var(--ak-ink)]"
+          >
             {l.label}
           </option>
         ))}

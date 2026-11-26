@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { KeyRound, Lock, ShieldCheck, UserPlus, X } from 'lucide-react';
 import { apiFetch, setAuthToken } from '../lib/api';
 import { LanguageSelector, useI18n } from '../lib/i18n';
+import { ThemeToggle } from '../lib/theme';
 import type { AccountCategory, PublicGatewayInfo, UserProfile } from '../types/akademi';
 import { BrandMark, DEFAULT_BRAND_LOGO } from './BrandMark';
 import { PasswordInput } from './PasswordInput';
@@ -207,30 +208,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const inputCls =
-    'min-h-[44px] w-full rounded-lg border border-[#C8BFA8] bg-[#F6F3EB] px-3.5 py-2.5 text-base text-[#0C1B2E] placeholder:text-[#6B665D] focus:border-[#0C1B2E] focus:outline-none';
-  const labelCls = 'mb-1.5 block text-sm font-semibold text-[#0C1B2E]';
+    'min-h-[44px] w-full rounded-lg border border-[var(--ak-border)] bg-[var(--ak-recessed)] px-3.5 py-2.5 text-base text-[var(--ak-ink)] placeholder:text-[var(--ak-muted)] focus:border-[#C9642E] focus:outline-none';
+  const labelCls = 'mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]';
 
   return (
-    <div dir={dir} className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C1B2E]/75 p-4 backdrop-blur-xs">
-      <div className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[#C8BFA8] bg-[#EFECE3] shadow-2xl">
+    <div
+      dir={dir}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xs"
+      style={{ backgroundColor: 'var(--ak-backdrop)' }}
+    >
+      <div className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] text-[var(--ak-ink)] shadow-2xl">
         <div className="african-weave-rule" />
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D4CCB9] bg-[#F6F3EB] px-5 py-4 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ak-divider)] bg-[var(--ak-recessed)] px-5 py-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <BrandMark brandName={brandName} logoUrl={logoUrl} compact />
             <div className="min-w-0">
-              <h2 className="font-display text-xl font-bold text-[#0C1B2E]">
+              <h2 className="font-display text-xl font-bold text-[var(--ak-ink)]">
                 {brandName} {t.accessPortalTitle}
               </h2>
-              <p className="truncate text-sm text-[#4A463F]">{t.accessPortalSub}</p>
+              <p className="truncate text-sm text-[var(--ak-muted)]">{t.accessPortalSub}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <ThemeToggle compact />
             <LanguageSelector compact />
             <button
               type="button"
               onClick={onClose}
               aria-label="Close portal dialog"
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#D4CCB9] bg-[#EFECE3] text-[#0C1B2E] hover:bg-[#E6E0D3]"
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)]"
             >
               <X className="h-5 w-5" />
             </button>
@@ -238,7 +244,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Mode Tabs */}
-        <div className="grid grid-cols-2 gap-2 border-b border-[#D4CCB9] bg-[#E6E0D3] px-5 py-3 sm:flex sm:flex-wrap sm:px-6">
+        <div className="grid grid-cols-2 gap-2 border-b border-[var(--ak-divider)] bg-[var(--ak-recessed)] px-5 py-3 sm:flex sm:flex-wrap sm:px-6">
           <button
             type="button"
             onClick={() => {
@@ -247,8 +253,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             }}
             className={`min-h-[40px] rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors ${
               mode === 'LOGIN'
-                ? 'bg-[#0C1B2E] text-[#F6F3EB]'
-                : 'bg-[#F6F3EB]/70 text-[#2D3D50] hover:bg-[#EFECE3] hover:text-[#0C1B2E]'
+                ? 'bg-[#C9642E] text-[#F8F5EE]'
+                : 'border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink-2)] hover:text-[var(--ak-ink)]'
             }`}
           >
             {t.tabSignIn}
@@ -261,8 +267,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             }}
             className={`min-h-[40px] rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors ${
               mode === 'REGISTER_LEARNER'
-                ? 'bg-[#0C1B2E] text-[#F6F3EB]'
-                : 'bg-[#F6F3EB]/70 text-[#2D3D50] hover:bg-[#EFECE3] hover:text-[#0C1B2E]'
+                ? 'bg-[#C9642E] text-[#F8F5EE]'
+                : 'border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink-2)] hover:text-[var(--ak-ink)]'
             }`}
           >
             {t.tabLearnerSignUp}
@@ -275,8 +281,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             }}
             className={`min-h-[40px] rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors ${
               mode === 'REQUEST_CONTRIBUTOR'
-                ? 'bg-[#0C1B2E] text-[#F6F3EB]'
-                : 'bg-[#F6F3EB]/70 text-[#2D3D50] hover:bg-[#EFECE3] hover:text-[#0C1B2E]'
+                ? 'bg-[#C9642E] text-[#F8F5EE]'
+                : 'border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink-2)] hover:text-[var(--ak-ink)]'
             }`}
           >
             {t.tabApplyContributor}
@@ -290,8 +296,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               }}
               className={`min-h-[40px] rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors ${
                 mode === 'CLAIM_ADMIN'
-                  ? 'bg-[#A44A1C] text-[#F6F3EB]'
-                  : 'bg-[#F6F3EB] text-[#A44A1C] hover:bg-[#EFECE3]'
+                  ? 'bg-[#C9642E] text-[#F8F5EE]'
+                  : 'border border-[#C9642E]/50 bg-[var(--ak-elevated)] text-[var(--ak-accent-ink)] hover:bg-[var(--ak-elevated-hover)]'
               }`}
             >
               {t.tabClaimAdmin}
@@ -301,30 +307,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         <div className="p-6">
           {error && (
-            <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">
+            <div
+              className="mb-4 rounded-lg border px-4 py-3 text-sm font-medium"
+              style={{
+                color: 'var(--ak-err-fg)',
+                backgroundColor: 'var(--ak-err-bg)',
+                borderColor: 'var(--ak-err-bd)',
+              }}
+            >
               {error}
             </div>
           )}
           {successMsg && (
-            <div className="mb-4 rounded-lg border border-[#1E5631]/40 bg-[#E8F0EA] px-4 py-3 text-sm font-medium text-[#1E5631]">
+            <div
+              className="mb-4 rounded-lg border px-4 py-3 text-sm font-medium"
+              style={{
+                color: 'var(--ak-ok-fg)',
+                backgroundColor: 'var(--ak-ok-bg)',
+                borderColor: 'var(--ak-ok-bd)',
+              }}
+            >
               {successMsg}
             </div>
           )}
 
           {needsAdminClaim && mode === 'LOGIN' && (
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#C8BFA8] bg-[#F6F3EB] px-4 py-3.5">
-              <div className="text-sm text-[#0C1B2E]">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-4 py-3.5">
+              <div className="text-sm text-[var(--ak-ink)]">
                 <p className="font-semibold">Initial Setup: Master Admin Password Unclaimed</p>
-                <p className="mt-0.5 text-[#4A463F]">
+                <p className="mt-0.5 text-[var(--ak-ink-2)]">
                   Configure the Master Admin passphrase for{' '}
-                  <span className="font-mono font-medium text-[#0C1B2E]">{masterEmail}</span> to
-                  activate governance.
+                  <span className="font-mono font-medium text-[var(--ak-accent-ink)]">
+                    {masterEmail}
+                  </span>{' '}
+                  to activate governance.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setMode('CLAIM_ADMIN')}
-                className="rounded-lg bg-[#A44A1C] px-4 py-2.5 text-sm font-semibold text-[#F6F3EB] hover:bg-[#8A3B14] whitespace-nowrap"
+                className="rounded-lg bg-[#C9642E] px-4 py-2.5 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] whitespace-nowrap"
               >
                 Claim Admin Account
               </button>
@@ -356,7 +378,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-lg bg-[#0C1B2E] px-5 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#1A2F4A] disabled:opacity-50"
+                className="inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-lg bg-[#C9642E] px-5 py-3 text-base font-semibold text-[#F8F5EE] hover:bg-[#D8733C] disabled:opacity-50"
               >
                 <Lock className="h-4 w-4" />
                 {loading ? t.signingIn : `${t.tabSignIn} · ${brandName}`}
@@ -366,15 +388,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           {mode === 'CLAIM_ADMIN' && (
             <form onSubmit={handleClaimAdmin} className="space-y-4">
-              <div className="flex items-start gap-3 rounded-lg border border-[#D4CCB9] bg-[#F6F3EB] p-4">
-                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#0C1B2E]" />
-                <div className="text-sm text-[#2D3D50]">
-                  <p className="font-semibold text-[#0C1B2E]">
+              <div className="flex items-start gap-3 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] p-4">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[var(--ak-accent-ink)]" />
+                <div className="text-sm text-[var(--ak-ink-2)]">
+                  <p className="font-semibold text-[var(--ak-ink)]">
                     One-Time Master Admin &amp; Compliance Setup
                   </p>
                   <p className="mt-1">
-                    Claim <span className="font-mono text-[#0C1B2E]">{masterEmail}</span> by
-                    setting a strong passphrase. Once claimed, this setup locks permanently.
+                    Claim <span className="font-mono text-[var(--ak-accent-ink)]">{masterEmail}</span>{' '}
+                    by setting a strong passphrase. Once claimed, this setup locks permanently.
                   </p>
                 </div>
               </div>
@@ -401,7 +423,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-lg bg-[#0C1B2E] px-5 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#1A2F4A] disabled:opacity-50"
+                className="inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-lg bg-[#C9642E] px-5 py-3 text-base font-semibold text-[#F8F5EE] hover:bg-[#D8733C] disabled:opacity-50"
               >
                 <KeyRound className="h-4 w-4" />
                 {loading ? t.signingIn : t.tabClaimAdmin}
@@ -492,7 +514,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-lg bg-[#A44A1C] px-5 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#8A3B14] disabled:opacity-50"
+                className="inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-lg bg-[#C9642E] px-5 py-3 text-base font-semibold text-[#F8F5EE] hover:bg-[#D8733C] disabled:opacity-50"
               >
                 <UserPlus className="h-4 w-4" />
                 {loading ? t.creatingAccount : t.createLearnerAccount}
@@ -502,7 +524,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           {mode === 'REQUEST_CONTRIBUTOR' && (
             <form onSubmit={handleSubmitRequest} className="space-y-4">
-              <p className="text-sm leading-relaxed text-[#2D3D50]">
+              <p className="text-sm leading-relaxed text-[var(--ak-ink-2)]">
                 Teachers, Schools, Institutions, and Freelancers request access here. Upon Master
                 Admin approval, temporary credentials are sent so you can complete identity
                 verification and activate your publishing plan.
@@ -612,7 +634,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="min-h-[46px] w-full rounded-lg bg-[#0C1B2E] px-5 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#1A2F4A] disabled:opacity-50"
+                className="min-h-[46px] w-full rounded-lg bg-[#C9642E] px-5 py-3 text-base font-semibold text-[#F8F5EE] hover:bg-[#D8733C] disabled:opacity-50"
               >
                 {loading ? t.submittingApplication : t.submitApplication}
               </button>
@@ -667,33 +689,48 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
   };
 
   return (
-    <div dir={dir} className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C1B2E]/80 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-md overflow-hidden rounded-xl border border-[#C8BFA8] bg-[#EFECE3] shadow-2xl">
+    <div
+      dir={dir}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xs"
+      style={{ backgroundColor: 'var(--ak-backdrop)' }}
+    >
+      <div className="w-full max-w-md overflow-hidden rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] text-[var(--ak-ink)] shadow-2xl">
         <div className="african-weave-rule" />
         <div className="p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <BrandMark brandName="Security Setup" compact />
-              <h2 className="font-display text-xl font-bold text-[#0C1B2E]">
+              <h2 className="font-display text-xl font-bold text-[var(--ak-ink)]">
                 {t.setPermanentPassword}
               </h2>
             </div>
-            <LanguageSelector compact />
+            <div className="flex items-center gap-2">
+              <ThemeToggle compact />
+              <LanguageSelector compact />
+            </div>
           </div>
-          <p className="text-sm leading-relaxed text-[#2D3D50]">
-            Signed in as <span className="font-semibold text-[#0C1B2E]">{user.email}</span> using
-            temporary credentials. Choose a permanent password before proceeding to verification.
+          <p className="text-sm leading-relaxed text-[var(--ak-ink-2)]">
+            Signed in as <span className="font-semibold text-[var(--ak-ink)]">{user.email}</span>{' '}
+            using temporary credentials. Choose a permanent password before proceeding to
+            verification.
           </p>
 
           {error && (
-            <div className="mt-4 rounded-lg border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm text-red-900">
+            <div
+              className="mt-4 rounded-lg border px-3.5 py-2.5 text-sm"
+              style={{
+                color: 'var(--ak-err-fg)',
+                backgroundColor: 'var(--ak-err-bg)',
+                borderColor: 'var(--ak-err-bd)',
+              }}
+            >
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="mt-5 space-y-4">
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+              <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                 {t.newPassword}
               </label>
               <PasswordInput
@@ -704,7 +741,7 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+              <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                 {t.confirmPassword}
               </label>
               <PasswordInput
@@ -718,14 +755,14 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
               <button
                 type="button"
                 onClick={onLogout}
-                className="min-h-[44px] rounded-lg border border-[#C8BFA8] bg-[#F6F3EB] px-4 py-2 text-sm font-semibold text-[#0C1B2E] hover:bg-[#E6E0D3]"
+                className="min-h-[44px] rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-4 py-2 text-sm font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)]"
               >
                 {t.signOut}
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="min-h-[44px] rounded-lg bg-[#0C1B2E] px-5 py-2 text-sm font-semibold text-[#F6F3EB] hover:bg-[#1A2F4A] disabled:opacity-50"
+                className="min-h-[44px] rounded-lg bg-[#C9642E] px-5 py-2 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] disabled:opacity-50"
               >
                 {saving ? '...' : t.savePasswordContinue}
               </button>

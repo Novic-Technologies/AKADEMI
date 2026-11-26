@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Download,
+  Eye,
   FileText,
   Hand,
   Mic,
@@ -25,6 +26,7 @@ import type {
   UserProfile,
   UserRole,
 } from '../types/akademi';
+import { ContentInspectorModal, type InspectedContent } from './ContentInspectorModal';
 
 interface LiveClassroomModalProps {
   sessionId: string;
@@ -50,6 +52,7 @@ export const LiveClassroomModal: React.FC<LiveClassroomModalProps> = ({
   const [chatInput, setChatInput] = useState('');
   const [activeSideTab, setActiveSideTab] = useState<'CHAT' | 'MATERIALS' | 'PEOPLE'>('CHAT');
   const [selectedResourceToPin, setSelectedResourceToPin] = useState('');
+  const [inspectedDoc, setInspectedDoc] = useState<InspectedContent | null>(null);
 
   // Local media controls (WebRTC camera/mic preview + Audio-First low-data mode)
   const [camEnabled, setCamEnabled] = useState(false);
@@ -249,17 +252,36 @@ export const LiveClassroomModal: React.FC<LiveClassroomModalProps> = ({
     setChatInput('');
   };
 
-  const handleDownloadPinned = async (res: ResourceItem) => {
+  const handleOpenPinned = async (r: ResourceItem, download = false) => {
     try {
-      const blob = await fetchAuthorizedBlob(`/api/files/resource/${res.id}?download=1`);
+      const blob = await fetchAuthorizedBlob(
+        `/api/files/resource/${r.id}${download ? '?download=1' : ''}`
+      );
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = res.fileName;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (download && r.downloadable) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = blob.type === 'application/pdf' && !r.fileName.toLowerCase().endsWith('.pdf')
+          ? `${r.fileName.replace(/\.[^.]+$/, '')}.pdf`
+          : r.fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+      setInspectedDoc({
+        title: r.title,
+        subtitle: `${r.ownerName} · ${r.subject}`,
+        fileName:
+          blob.type === 'application/pdf' && !r.fileName.toLowerCase().endsWith('.pdf')
+            ? `${r.fileName.replace(/\.[^.]+$/, '')}.pdf`
+            : r.fileName,
+        mimeType: blob.type || r.mimeType || 'application/pdf',
+        objectUrl: url,
+        blob,
+        canDownload: r.downloadable,
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to download resource.');
+      setError(err instanceof Error ? err.message : 'Unable to open classroom document.');
     }
   };
 
@@ -267,461 +289,490 @@ export const LiveClassroomModal: React.FC<LiveClassroomModalProps> = ({
   const hasMicGrant = Boolean(session?.micGrantedUserIds.includes(currentUser.id));
 
   return (
-    <div dir={dir} className="fixed inset-0 z-50 flex items-center justify-center bg-[#060E1A]/85 p-3 sm:p-4 backdrop-blur-sm">
-      <div className="flex h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-[#22354D] bg-[#0C1B2E] text-[#F6F3EB] shadow-2xl">
-        {/* Classroom Header */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#22354D] px-5 py-3.5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2.5 text-sm text-[#C8D1DD]">
-              <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-400">
-                {wsConnected && (
-                  <span className="h-2 w-2 rounded-full bg-emerald-400" aria-hidden="true" />
-                )}
-                {session?.status || 'CONNECTING'}
+    <>
+      <div
+        dir={dir}
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm"
+        style={{ backgroundColor: 'var(--ak-backdrop)' }}
+      >
+        <div className="flex h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] text-[var(--ak-ink)] shadow-2xl">
+          {/* Classroom Header */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--ak-divider)] px-5 py-3.5">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5 text-sm text-[var(--ak-ink-2)]">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--ak-ok-fg)]">
+                  {wsConnected && (
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
+                  )}
+                  {session?.status || 'CONNECTING'}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span className="truncate">{session?.courseTitle}</span>
+                <span aria-hidden="true">·</span>
+                <span>Host: {session?.hostName}</span>
+              </div>
+              <h2 className="mt-0.5 truncate text-lg font-bold text-[var(--ak-ink)]">
+                {session?.title || 'Loading Live Classroom...'}
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <span className="text-sm font-mono-nums text-[var(--ak-muted)]">
+                {session?.activeParticipantIds.length || 0} connected
               </span>
-              <span aria-hidden="true">·</span>
-              <span className="truncate">{session?.courseTitle}</span>
-              <span aria-hidden="true">·</span>
-              <span>Host: {session?.hostName}</span>
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-3.5 py-1.5 text-sm font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)]"
+              >
+                <X className="h-4 w-4" />
+                {t.leaveRoom}
+              </button>
             </div>
-            <h2 className="mt-0.5 truncate text-lg font-bold text-[#F6F3EB]">
-              {session?.title || 'Loading Live Classroom...'}
-            </h2>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-sm font-mono-nums text-[#E6E0D3]">
-              {session?.activeParticipantIds.length || 0} connected
-            </span>
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[#324966] bg-[#162942] px-3.5 py-1.5 text-sm font-semibold text-[#F6F3EB] hover:bg-[#1E3554]"
+          {error && (
+            <div
+              className="border-b px-5 py-2.5 text-xs"
+              style={{
+                color: 'var(--ak-err-fg)',
+                backgroundColor: 'var(--ak-err-bg)',
+                borderColor: 'var(--ak-err-bd)',
+              }}
             >
-              <X className="h-4 w-4" />
-              {t.leaveRoom}
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <div className="border-b border-red-900/60 bg-red-950/70 px-5 py-2.5 text-xs text-red-200">
-            {error}
-          </div>
-        )}
-
-        {/* Main Classroom Grid */}
-        <div className="grid flex-1 overflow-hidden lg:grid-cols-12">
-          {/* Presenter Stage */}
-          <div className="flex flex-col justify-between bg-[#081322] p-5 lg:col-span-8">
-            <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border border-[#22354D] bg-[#0C1B2E]">
-              {camEnabled || screenSharing ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="max-w-lg px-6 text-center">
-                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-[#324966] bg-[#162942] text-xl font-bold text-[#F6F3EB]">
-                    {session?.hostName?.slice(0, 2).toUpperCase() || 'AK'}
-                  </div>
-                  <h3 className="text-xl font-bold text-[#F6F3EB]">
-                    {session?.hostName || 'Instructor Stage'}
-                  </h3>
-                  <p className="mt-2 text-base text-[#C8D1DD]">
-                    {session?.topicSummary ||
-                      'Authenticated real-time classroom stream with moderated Q&A and instant resource sharing.'}
-                  </p>
-                  <p className="mt-4 text-sm text-[#9FB0C4]">
-                    {isHost
-                      ? 'Use Camera or Screen Share below to broadcast to enrolled learners.'
-                      : 'Audio/video is muted on entry. Raise your hand to request speaking access.'}
-                  </p>
-                </div>
-              )}
-
-              {mediaNotice && (
-                <div className="absolute bottom-3 left-3 right-3 rounded-lg border border-amber-700/60 bg-amber-950/85 px-3.5 py-2.5 text-sm text-amber-200">
-                  {mediaNotice}
-                </div>
-              )}
+              {error}
             </div>
+          )}
 
-            {/* Stage Controls Bar */}
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                {(isHost || hasMicGrant) && (
-                  <>
+          {/* Main Classroom Grid */}
+          <div className="grid flex-1 overflow-hidden lg:grid-cols-12">
+            {/* Presenter Stage (kept deep studio tone for video clarity) */}
+            <div className="flex flex-col justify-between bg-[#081322] p-5 text-[#F6F3EB] lg:col-span-8">
+              <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border border-[#22354D] bg-[#0C1B2E]">
+                {camEnabled || screenSharing ? (
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="max-w-lg px-6 text-center">
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-[#324966] bg-[#162942] text-xl font-bold text-[#F6F3EB]">
+                      {session?.hostName?.slice(0, 2).toUpperCase() || 'AK'}
+                    </div>
+                    <h3 className="text-xl font-bold text-[#F6F3EB]">
+                      {session?.hostName || 'Instructor Stage'}
+                    </h3>
+                    <p className="mt-2 text-base text-[#C8D1DD]">
+                      {session?.topicSummary ||
+                        'Authenticated real-time classroom stream with moderated Q&A and instant resource sharing.'}
+                    </p>
+                    <p className="mt-4 text-sm text-[#9FB0C4]">
+                      {isHost
+                        ? 'Use Camera or Screen Share below to broadcast to enrolled learners.'
+                        : 'Audio/video is muted on entry. Raise your hand to request speaking access.'}
+                    </p>
+                  </div>
+                )}
+
+                {mediaNotice && (
+                  <div className="absolute bottom-3 left-3 right-3 rounded-lg border border-amber-700/60 bg-amber-950/85 px-3.5 py-2.5 text-sm text-amber-200">
+                    {mediaNotice}
+                  </div>
+                )}
+              </div>
+
+              {/* Stage Controls Bar */}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {(isHost || hasMicGrant) && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setMicEnabled((v) => !v)}
+                        className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
+                          micEnabled
+                            ? 'bg-[#1E5631] text-[#F6F3EB]'
+                            : 'border border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
+                        }`}
+                      >
+                        {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                        {micEnabled ? t.micLive : t.micMuted}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggleCamera}
+                        className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
+                          camEnabled
+                            ? 'bg-[#A44A1C] text-[#F6F3EB]'
+                            : 'border border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
+                        }`}
+                      >
+                        {camEnabled ? (
+                          <Video className="h-4 w-4" />
+                        ) : (
+                          <VideoOff className="h-4 w-4" />
+                        )}
+                        {camEnabled ? t.cameraOn : t.startCamera}
+                      </button>
+                    </>
+                  )}
+
+                  {isHost && (
                     <button
                       type="button"
-                      onClick={() => setMicEnabled((v) => !v)}
+                      onClick={toggleScreenShare}
                       className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
-                        micEnabled
-                          ? 'bg-[#1E5631] text-[#F6F3EB]'
-                          : 'border border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
-                      }`}
-                    >
-                      {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                      {micEnabled ? t.micLive : t.micMuted}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={toggleCamera}
-                      className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
-                        camEnabled
+                        screenSharing
                           ? 'bg-[#A44A1C] text-[#F6F3EB]'
                           : 'border border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
                       }`}
                     >
-                      {camEnabled ? (
-                        <Video className="h-4 w-4" />
-                      ) : (
-                        <VideoOff className="h-4 w-4" />
-                      )}
-                      {camEnabled ? t.cameraOn : t.startCamera}
+                      <Monitor className="h-4 w-4" />
+                      {screenSharing ? t.stopShare : t.shareScreen}
                     </button>
-                  </>
-                )}
+                  )}
 
-                {isHost && (
+                  {!isHost && (
+                    <button
+                      type="button"
+                      onClick={() => sendWs('session:raise_hand', { raised: !isHandRaised })}
+                      className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
+                        isHandRaised
+                          ? 'bg-[#A44A1C] text-[#F6F3EB]'
+                          : 'border border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
+                      }`}
+                    >
+                      <Hand className="h-4 w-4" />
+                      {isHandRaised ? t.handRaised : t.raiseHand}
+                    </button>
+                  )}
+
                   <button
                     type="button"
-                    onClick={toggleScreenShare}
-                    className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
-                      screenSharing
-                        ? 'bg-[#A44A1C] text-[#F6F3EB]'
-                        : 'border border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
+                    onClick={toggleLowDataMode}
+                    className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                      lowDataMode
+                        ? 'border-emerald-600 bg-emerald-950/70 text-emerald-200'
+                        : 'border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
                     }`}
                   >
-                    <Monitor className="h-4 w-4" />
-                    {screenSharing ? t.stopShare : t.shareScreen}
+                    {lowDataMode ? t.audioFirstOn : t.audioFirstMode}
                   </button>
-                )}
+                </div>
 
-                {!isHost && (
-                  <button
-                    type="button"
-                    onClick={() => sendWs('session:raise_hand', { raised: !isHandRaised })}
-                    className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${
-                      isHandRaised
-                        ? 'bg-[#A44A1C] text-[#F6F3EB]'
-                        : 'border border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
-                    }`}
-                  >
-                    <Hand className="h-4 w-4" />
-                    {isHandRaised ? t.handRaised : t.raiseHand}
-                  </button>
+                {isHost && session && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => sendWs('session:moderate', { action: 'TOGGLE_MUTE' })}
+                      className={`min-h-[40px] rounded-lg border px-3.5 py-1.5 text-sm font-semibold ${
+                        session.chatMuted
+                          ? 'border-red-600 bg-red-950/70 text-red-200'
+                          : 'border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
+                      }`}
+                    >
+                      {session.chatMuted ? t.unmuteChat : t.muteChat}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendWs('session:moderate', { action: 'TOGGLE_QA' })}
+                      className={`min-h-[40px] rounded-lg border px-3.5 py-1.5 text-sm font-semibold ${
+                        session.qaMode
+                          ? 'border-amber-500 bg-amber-950/70 text-amber-200'
+                          : 'border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
+                      }`}
+                    >
+                      {session.qaMode ? t.qaModeActive : t.enableQaMode}
+                    </button>
+                  </div>
                 )}
+              </div>
+            </div>
 
+            {/* Right Classroom Sidebar: Chat, Pinned Materials, Participants */}
+            <div className="flex flex-col border-t border-[var(--ak-divider)] bg-[var(--ak-surface)] lg:col-span-4 lg:border-t-0 lg:border-s">
+              <div className="grid grid-cols-3 border-b border-[var(--ak-divider)] p-1.5">
                 <button
                   type="button"
-                  onClick={toggleLowDataMode}
-                  className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-semibold transition-colors ${
-                    lowDataMode
-                      ? 'border-emerald-600 bg-emerald-950/70 text-emerald-200'
-                      : 'border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
+                  onClick={() => setActiveSideTab('CHAT')}
+                  className={`rounded-md py-2 text-sm font-semibold transition-colors ${
+                    activeSideTab === 'CHAT'
+                      ? 'bg-[var(--ak-elevated)] text-[var(--ak-ink)]'
+                      : 'text-[var(--ak-muted)] hover:text-[var(--ak-ink)]'
                   }`}
                 >
-                  {lowDataMode ? t.audioFirstOn : t.audioFirstMode}
+                  {t.liveChatTab} ({session?.chatMessages.length || 0})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSideTab('MATERIALS')}
+                  className={`rounded-md py-2 text-sm font-semibold transition-colors ${
+                    activeSideTab === 'MATERIALS'
+                      ? 'bg-[var(--ak-elevated)] text-[var(--ak-ink)]'
+                      : 'text-[var(--ak-muted)] hover:text-[var(--ak-ink)]'
+                  }`}
+                >
+                  {t.liveMaterialsTab} ({pinnedResources.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSideTab('PEOPLE')}
+                  className={`rounded-md py-2 text-sm font-semibold transition-colors ${
+                    activeSideTab === 'PEOPLE'
+                      ? 'bg-[var(--ak-elevated)] text-[var(--ak-ink)]'
+                      : 'text-[var(--ak-muted)] hover:text-[var(--ak-ink)]'
+                  }`}
+                >
+                  {t.livePeopleTab} ({session?.activeParticipantIds.length || 0})
                 </button>
               </div>
 
-              {isHost && session && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => sendWs('session:moderate', { action: 'TOGGLE_MUTE' })}
-                    className={`min-h-[40px] rounded-lg border px-3.5 py-1.5 text-sm font-semibold ${
-                      session.chatMuted
-                        ? 'border-red-600 bg-red-950/70 text-red-200'
-                        : 'border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
-                    }`}
+              {activeSideTab === 'CHAT' && (
+                <div className="flex flex-1 flex-col overflow-hidden">
+                  <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                    {session?.chatMessages.length === 0 ? (
+                      <p className="text-sm text-[var(--ak-muted)]">
+                        No messages yet. Ask a question or share discussion notes below.
+                      </p>
+                    ) : (
+                      session?.chatMessages.map((m) => (
+                        <div
+                          key={m.id}
+                          className="rounded-lg border border-[var(--ak-divider)] bg-[var(--ak-recessed)] p-3 text-sm"
+                        >
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <span className="font-semibold text-[var(--ak-ink)]">
+                              {m.senderName}
+                              {m.isQuestion && (
+                                <span className="ml-2 text-[var(--ak-warn-fg)]">[Question]</span>
+                              )}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono-nums text-[var(--ak-muted)]">
+                                {new Date(m.timestamp).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                              {isHost && (
+                                <button
+                                  type="button"
+                                  title="Delete message"
+                                  onClick={() =>
+                                    sendWs('session:moderate', {
+                                      action: 'DELETE_MESSAGE',
+                                      messageId: m.id,
+                                    })
+                                  }
+                                  className="text-[var(--ak-muted)] hover:text-[var(--ak-err-fg)]"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-[var(--ak-ink-2)]">{m.text}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <form
+                    onSubmit={handleSendChat}
+                    className="flex items-center gap-2 border-t border-[var(--ak-divider)] p-3"
                   >
-                    {session.chatMuted ? t.unmuteChat : t.muteChat}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => sendWs('session:moderate', { action: 'TOGGLE_QA' })}
-                    className={`min-h-[40px] rounded-lg border px-3.5 py-1.5 text-sm font-semibold ${
-                      session.qaMode
-                        ? 'border-amber-500 bg-amber-950/70 text-amber-200'
-                        : 'border-[#324966] bg-[#162942] text-[#F6F3EB] hover:bg-[#1E3554]'
-                    }`}
-                  >
-                    {session.qaMode ? t.qaModeActive : t.enableQaMode}
-                  </button>
+                    <input
+                      type="text"
+                      disabled={Boolean(session?.chatMuted && !isHost)}
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder={
+                        session?.chatMuted && !isHost
+                          ? 'Chat muted by instructor'
+                          : session?.qaMode
+                            ? 'Submit a question...'
+                            : 'Message class...'
+                      }
+                      className="min-h-[42px] flex-1 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-recessed)] px-3 py-2 text-sm text-[var(--ak-ink)] placeholder:text-[var(--ak-muted)] focus:border-[#C9642E] focus:outline-none disabled:opacity-50"
+                    />
+                    <button
+                      type="submit"
+                      disabled={Boolean(session?.chatMuted && !isHost)}
+                      className="min-h-[42px] rounded-lg bg-[#C9642E] px-3 text-[#F8F5EE] hover:bg-[#D8733C] disabled:opacity-40"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {activeSideTab === 'MATERIALS' && (
+                <div className="flex flex-1 flex-col overflow-y-auto p-4 space-y-4">
+                  {isHost && hostLibrary.length > 0 && (
+                    <div className="rounded-lg border border-[var(--ak-divider)] bg-[var(--ak-recessed)] p-3 space-y-2">
+                      <p className="text-sm font-semibold text-[var(--ak-ink)]">
+                        Push Resource from Your Vault to Class
+                      </p>
+                      <div className="flex gap-2">
+                        <select
+                          value={selectedResourceToPin}
+                          onChange={(e) => setSelectedResourceToPin(e.target.value)}
+                          className="min-h-[40px] flex-1 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-surface)] px-2.5 py-1.5 text-sm text-[var(--ak-ink)]"
+                        >
+                          <option value="">Select file to share...</option>
+                          {hostLibrary.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              [{r.type}] {r.title}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={!selectedResourceToPin}
+                          onClick={() => {
+                            if (!selectedResourceToPin) return;
+                            sendWs('session:moderate', {
+                              action: 'PIN_RESOURCE',
+                              resourceId: selectedResourceToPin,
+                            });
+                            setSelectedResourceToPin('');
+                          }}
+                          className="inline-flex min-h-[40px] items-center gap-1 rounded-lg bg-[#C9642E] px-3.5 py-1.5 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] disabled:opacity-40"
+                        >
+                          <Pin className="h-4 w-4" />
+                          Push
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {pinnedResources.length === 0 ? (
+                    <p className="text-xs text-[var(--ak-muted)]">
+                      No resources pinned yet. Files shared by the host appear here as documents.
+                    </p>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {pinnedResources.map((r) => (
+                        <div
+                          key={r.id}
+                          className="rounded-lg border border-[var(--ak-divider)] bg-[var(--ak-recessed)] p-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 text-xs text-[var(--ak-muted)]">
+                                <FileText className="h-3.5 w-3.5 text-[var(--ak-accent-ink)]" />
+                                <span>{r.type}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>{r.fileSizeLabel}</span>
+                              </div>
+                              <p className="mt-1 text-xs font-semibold text-[var(--ak-ink)]">
+                                {r.title}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPinned(r, false)}
+                                className="inline-flex items-center gap-1 rounded-md border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-2.5 py-1 text-xs font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)]"
+                              >
+                                <Eye className="h-3 w-3" />
+                                View
+                              </button>
+                              {r.downloadable && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPinned(r, true)}
+                                  className="inline-flex items-center gap-1 rounded-md bg-[#C9642E] px-2.5 py-1 text-xs font-semibold text-[#F8F5EE] hover:bg-[#D8733C]"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  Save
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeSideTab === 'PEOPLE' && (
+                <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+                  {session?.activeParticipantIds.map((pid) => {
+                    const person = participantDirectory[pid];
+                    const raised = session.raisedHandUserIds.includes(pid);
+                    const micOk = session.micGrantedUserIds.includes(pid);
+                    const isSelf = pid === currentUser.id;
+                    return (
+                      <div
+                        key={pid}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-[var(--ak-divider)] bg-[var(--ak-recessed)] px-3 py-2.5 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-[var(--ak-ink)]">
+                            {person?.name || pid} {isSelf ? '(You)' : ''}
+                          </p>
+                          <p className="text-[var(--ak-muted)]">
+                            {person?.role.replace('_', ' ') || 'Attendee'}
+                            {raised ? ' · Hand Raised' : ''}
+                            {micOk ? ' · Mic Granted' : ''}
+                          </p>
+                        </div>
+                        {isHost && !isSelf && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              title={micOk ? 'Revoke mic' : 'Grant mic'}
+                              onClick={() =>
+                                sendWs('session:moderate', {
+                                  action: 'GRANT_MIC',
+                                  targetUserId: pid,
+                                })
+                              }
+                              className={`rounded border px-2 py-1 ${
+                                micOk
+                                  ? 'border-emerald-600 text-[var(--ak-ok-fg)]'
+                                  : 'border-[var(--ak-border)] text-[var(--ak-ink-2)] hover:bg-[var(--ak-elevated)]'
+                              }`}
+                            >
+                              <Shield className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Remove participant"
+                              onClick={() =>
+                                sendWs('session:moderate', {
+                                  action: 'KICK_USER',
+                                  targetUserId: pid,
+                                })
+                              }
+                              className="rounded border border-[var(--ak-border)] p-1 text-[var(--ak-err-fg)] hover:bg-[var(--ak-err-bg)]"
+                            >
+                              <UserX className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {(!session || session.activeParticipantIds.length === 0) && (
+                    <div className="flex items-center gap-2 text-xs text-[var(--ak-muted)]">
+                      <Users className="h-4 w-4" />
+                      Connecting room roster...
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
-
-          {/* Right Classroom Sidebar: Chat, Pinned Materials, Participants */}
-          <div className="flex flex-col border-t border-[#22354D] bg-[#0C1B2E] lg:col-span-4 lg:border-t-0 lg:border-s">
-            <div className="grid grid-cols-3 border-b border-[#22354D] p-1.5">
-              <button
-                type="button"
-                onClick={() => setActiveSideTab('CHAT')}
-                className={`rounded-md py-2 text-sm font-semibold transition-colors ${
-                  activeSideTab === 'CHAT' ? 'bg-[#162942] text-[#F6F3EB]' : 'text-[#9FB0C4] hover:text-[#F6F3EB]'
-                }`}
-              >
-                {t.liveChatTab} ({session?.chatMessages.length || 0})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveSideTab('MATERIALS')}
-                className={`rounded-md py-2 text-sm font-semibold transition-colors ${
-                  activeSideTab === 'MATERIALS'
-                    ? 'bg-[#162942] text-[#F6F3EB]'
-                    : 'text-[#9FB0C4] hover:text-[#F6F3EB]'
-                }`}
-              >
-                {t.liveMaterialsTab} ({pinnedResources.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveSideTab('PEOPLE')}
-                className={`rounded-md py-2 text-sm font-semibold transition-colors ${
-                  activeSideTab === 'PEOPLE'
-                    ? 'bg-[#162942] text-[#F6F3EB]'
-                    : 'text-[#9FB0C4] hover:text-[#F6F3EB]'
-                }`}
-              >
-                {t.livePeopleTab} ({session?.activeParticipantIds.length || 0})
-              </button>
-            </div>
-
-            {activeSideTab === 'CHAT' && (
-              <div className="flex flex-1 flex-col overflow-hidden">
-                <div className="flex-1 space-y-3 overflow-y-auto p-4">
-                  {session?.chatMessages.length === 0 ? (
-                    <p className="text-sm text-[#9FB0C4]">
-                      No messages yet. Ask a question or share discussion notes below.
-                    </p>
-                  ) : (
-                    session?.chatMessages.map((m) => (
-                      <div
-                        key={m.id}
-                        className="rounded-lg border border-[#22354D] bg-[#081322] p-3 text-sm"
-                      >
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <span className="font-semibold text-[#F6F3EB]">
-                            {m.senderName}
-                            {m.isQuestion && (
-                              <span className="ml-2 text-amber-400">[Question]</span>
-                            )}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono-nums text-[#9FB0C4]">
-                              {new Date(m.timestamp).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                            {isHost && (
-                              <button
-                                type="button"
-                                title="Delete message"
-                                onClick={() =>
-                                  sendWs('session:moderate', {
-                                    action: 'DELETE_MESSAGE',
-                                    messageId: m.id,
-                                  })
-                                }
-                                className="text-[#9FB0C4] hover:text-red-400"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <p className="text-[#D4DCE6]">{m.text}</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <form
-                  onSubmit={handleSendChat}
-                  className="flex items-center gap-2 border-t border-[#22354D] p-3"
-                >
-                  <input
-                    type="text"
-                    disabled={Boolean(session?.chatMuted && !isHost)}
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    placeholder={
-                      session?.chatMuted && !isHost
-                        ? 'Chat muted by instructor'
-                        : session?.qaMode
-                          ? 'Submit a question...'
-                          : 'Message class...'
-                    }
-                    className="min-h-[42px] flex-1 rounded-lg border border-[#324966] bg-[#081322] px-3 py-2 text-sm text-[#F6F3EB] placeholder:text-[#9FB0C4] focus:border-[#A44A1C] focus:outline-none disabled:opacity-50"
-                  />
-                  <button
-                    type="submit"
-                    disabled={Boolean(session?.chatMuted && !isHost)}
-                    className="min-h-[42px] rounded-lg bg-[#A44A1C] px-3 text-[#F6F3EB] hover:bg-[#8E3F16] disabled:opacity-40"
-                  >
-                    <Send className="h-4 w-4" />
-                  </button>
-                </form>
-              </div>
-            )}
-
-            {activeSideTab === 'MATERIALS' && (
-              <div className="flex flex-1 flex-col overflow-y-auto p-4 space-y-4">
-                {isHost && hostLibrary.length > 0 && (
-                  <div className="rounded-lg border border-[#22354D] bg-[#081322] p-3 space-y-2">
-                    <p className="text-sm font-semibold text-[#F6F3EB]">
-                      Push Resource from Your Vault to Class
-                    </p>
-                    <div className="flex gap-2">
-                      <select
-                        value={selectedResourceToPin}
-                        onChange={(e) => setSelectedResourceToPin(e.target.value)}
-                        className="min-h-[40px] flex-1 rounded-lg border border-[#324966] bg-[#0C1B2E] px-2.5 py-1.5 text-sm text-[#F6F3EB]"
-                      >
-                        <option value="">Select file to share...</option>
-                        {hostLibrary.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            [{r.type}] {r.title}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        disabled={!selectedResourceToPin}
-                        onClick={() => {
-                          if (!selectedResourceToPin) return;
-                          sendWs('session:moderate', {
-                            action: 'PIN_RESOURCE',
-                            resourceId: selectedResourceToPin,
-                          });
-                          setSelectedResourceToPin('');
-                        }}
-                        className="inline-flex min-h-[40px] items-center gap-1 rounded-lg bg-[#A44A1C] px-3.5 py-1.5 text-sm font-semibold text-[#F6F3EB] hover:bg-[#8E3F16] disabled:opacity-40"
-                      >
-                        <Pin className="h-4 w-4" />
-                        Push
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {pinnedResources.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    No resources pinned yet. Files shared by the host appear here and save to your course library.
-                  </p>
-                ) : (
-                  <div className="space-y-2.5">
-                    {pinnedResources.map((r) => (
-                      <div
-                        key={r.id}
-                        className="rounded-lg border border-slate-800 bg-slate-950 p-3"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                              <FileText className="h-3.5 w-3.5 text-blue-400" />
-                              <span>{r.type}</span>
-                              <span aria-hidden="true">·</span>
-                              <span>{r.fileSizeLabel}</span>
-                            </div>
-                            <p className="mt-1 text-xs font-semibold text-white">{r.title}</p>
-                          </div>
-                          {r.downloadable && (
-                            <button
-                              type="button"
-                              onClick={() => handleDownloadPinned(r)}
-                              className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800 shrink-0"
-                            >
-                              <Download className="h-3 w-3" />
-                              Save
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeSideTab === 'PEOPLE' && (
-              <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-                {session?.activeParticipantIds.map((pid) => {
-                  const person = participantDirectory[pid];
-                  const raised = session.raisedHandUserIds.includes(pid);
-                  const micOk = session.micGrantedUserIds.includes(pid);
-                  const isSelf = pid === currentUser.id;
-                  return (
-                    <div
-                      key={pid}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-white">
-                          {person?.name || pid} {isSelf ? '(You)' : ''}
-                        </p>
-                        <p className="text-slate-400">
-                          {person?.role.replace('_', ' ') || 'Attendee'}
-                          {raised ? ' · Hand Raised' : ''}
-                          {micOk ? ' · Mic Granted' : ''}
-                        </p>
-                      </div>
-                      {isHost && !isSelf && (
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            title={micOk ? 'Revoke mic' : 'Grant mic'}
-                            onClick={() =>
-                              sendWs('session:moderate', {
-                                action: 'GRANT_MIC',
-                                targetUserId: pid,
-                              })
-                            }
-                            className={`rounded border px-2 py-1 ${
-                              micOk
-                                ? 'border-emerald-600 text-emerald-300'
-                                : 'border-slate-700 text-slate-300 hover:bg-slate-800'
-                            }`}
-                          >
-                            <Shield className="h-3 w-3" />
-                          </button>
-                          <button
-                            type="button"
-                            title="Remove participant"
-                            onClick={() =>
-                              sendWs('session:moderate', {
-                                action: 'KICK_USER',
-                                targetUserId: pid,
-                              })
-                            }
-                            className="rounded border border-slate-700 p-1 text-red-400 hover:bg-red-950/60"
-                          >
-                            <UserX className="h-3 w-3" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {(!session || session.activeParticipantIds.length === 0) && (
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <Users className="h-4 w-4" />
-                    Connecting room roster...
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         </div>
       </div>
-    </div>
+
+      <ContentInspectorModal item={inspectedDoc} onClose={() => setInspectedDoc(null)} />
+    </>
   );
 };

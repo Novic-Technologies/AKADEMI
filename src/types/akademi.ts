@@ -226,6 +226,12 @@ export interface SupportTicket {
   }[];
 }
 
+export interface MessageRecipient {
+  id: string;
+  name: string;
+  label: string;
+}
+
 export interface DirectMessageThread {
   id: string;
   contextType: 'ENROLLMENT_CHECK' | 'COURSE_QA' | 'INSTITUTION_STAFF';

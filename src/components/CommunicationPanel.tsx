@@ -1,23 +1,42 @@
 import React, { useEffect, useState } from 'react';
-import { MessageSquare, Send, ShieldAlert } from 'lucide-react';
+import {
+  Check,
+  Edit3,
+  MessageSquare,
+  Send,
+  ShieldAlert,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { useI18n } from '../lib/i18n';
-import type { DirectMessageThread, SupportTicket, UserProfile } from '../types/akademi';
+import type {
+  DirectMessageThread,
+  MessageRecipient,
+  SupportTicket,
+  UserProfile,
+} from '../types/akademi';
 
 interface CommunicationPanelProps {
   currentUser: UserProfile;
-  availableRecipients?: { id: string; name: string; label: string }[];
+  availableRecipients?: MessageRecipient[];
   defaultTab?: 'THREADS' | 'SUPPORT';
+  initialRecipientId?: string;
 }
 
 export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
   currentUser,
   availableRecipients = [],
   defaultTab = 'THREADS',
+  initialRecipientId = '',
 }) => {
   const { t } = useI18n();
   const [tab, setTab] = useState<'THREADS' | 'SUPPORT'>(
-    currentUser.role === 'MASTER_ADMIN' ? 'SUPPORT' : defaultTab
+    initialRecipientId
+      ? 'THREADS'
+      : currentUser.role === 'MASTER_ADMIN'
+        ? 'SUPPORT'
+        : defaultTab
   );
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [threads, setThreads] = useState<DirectMessageThread[]>([]);
@@ -30,26 +49,44 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
   // New Ticket form
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [ticketSubject, setTicketSubject] = useState('');
-  const [ticketCategory, setTicketCategory] = useState<SupportTicket['category']>('GENERAL');
+  const [ticketCategory, setTicketCategory] =
+    useState<SupportTicket['category']>('GENERAL');
   const [ticketBody, setTicketBody] = useState('');
 
+  // Edit Ticket form
+  const [editingTicket, setEditingTicket] = useState(false);
+  const [editTicketSubject, setEditTicketSubject] = useState('');
+  const [editTicketCategory, setEditTicketCategory] =
+    useState<SupportTicket['category']>('GENERAL');
+  const [editTicketStatus, setEditTicketStatus] =
+    useState<SupportTicket['status']>('OPEN');
+
   // New Thread form
-  const [showNewThread, setShowNewThread] = useState(false);
-  const [recipientId, setRecipientId] = useState('');
+  const [showNewThread, setShowNewThread] = useState(Boolean(initialRecipientId));
+  const [recipientId, setRecipientId] = useState(initialRecipientId);
   const [threadTitle, setThreadTitle] = useState('');
   const [threadBody, setThreadBody] = useState('');
+
+  // Inline Message edit state
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editingMsgBody, setEditingMsgBody] = useState('');
 
   const loadInbox = async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await apiFetch<{ tickets: SupportTicket[]; threads: DirectMessageThread[] }>(
-        '/api/communication/inbox'
-      );
+      const data = await apiFetch<{
+        tickets: SupportTicket[];
+        threads: DirectMessageThread[];
+      }>('/api/communication/inbox');
       setTickets(data.tickets);
       setThreads(data.threads);
-      if (!selectedTicketId && data.tickets.length > 0) setSelectedTicketId(data.tickets[0].id);
-      if (!selectedThreadId && data.threads.length > 0) setSelectedThreadId(data.threads[0].id);
+      if (!selectedTicketId && data.tickets.length > 0) {
+        setSelectedTicketId(data.tickets[0].id);
+      }
+      if (!selectedThreadId && data.threads.length > 0) {
+        setSelectedThreadId(data.threads[0].id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load inbox.');
     } finally {
@@ -61,8 +98,16 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
     loadInbox();
   }, [currentUser.id]);
 
-  const selectedTicket = tickets.find((t) => t.id === selectedTicketId) || tickets[0];
-  const selectedThread = threads.find((t) => t.id === selectedThreadId) || threads[0];
+  useEffect(() => {
+    if (initialRecipientId) {
+      setTab('THREADS');
+      setShowNewThread(true);
+      setRecipientId(initialRecipientId);
+    }
+  }, [initialRecipientId]);
+
+  const selectedTicket = tickets.find((tk) => tk.id === selectedTicketId) || tickets[0];
+  const selectedThread = threads.find((th) => th.id === selectedThreadId) || threads[0];
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,6 +128,45 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
       setShowNewTicket(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to create ticket.');
+    }
+  };
+
+  const handleUpdateTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTicket) return;
+    setError('');
+    try {
+      const payload: Record<string, string> = {
+        subject: editTicketSubject,
+        category: editTicketCategory,
+      };
+      if (currentUser.role === 'MASTER_ADMIN') {
+        payload.status = editTicketStatus;
+      }
+      const res = await apiFetch<{ ticket: SupportTicket }>(
+        `/api/tickets/${selectedTicket.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }
+      );
+      setTickets((prev) => prev.map((tk) => (tk.id === res.ticket.id ? res.ticket : tk)));
+      setEditingTicket(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update ticket.');
+    }
+  };
+
+  const handleDeleteTicket = async (ticketId: string) => {
+    setError('');
+    try {
+      await apiFetch(`/api/tickets/${ticketId}`, { method: 'DELETE' });
+      const remaining = tickets.filter((tk) => tk.id !== ticketId);
+      setTickets(remaining);
+      setSelectedTicketId(remaining[0]?.id || '');
+      setEditingTicket(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete ticket.');
     }
   };
 
@@ -109,6 +193,18 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
     }
   };
 
+  const handleDeleteThread = async (threadId: string) => {
+    setError('');
+    try {
+      await apiFetch(`/api/messages/${threadId}`, { method: 'DELETE' });
+      const remaining = threads.filter((th) => th.id !== threadId);
+      setThreads(remaining);
+      setSelectedThreadId(remaining[0]?.id || '');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete conversation.');
+    }
+  };
+
   const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim()) return;
@@ -122,7 +218,7 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
             body: JSON.stringify({ body: replyText }),
           }
         );
-        setTickets((prev) => prev.map((t) => (t.id === res.ticket.id ? res.ticket : t)));
+        setTickets((prev) => prev.map((tk) => (tk.id === res.ticket.id ? res.ticket : tk)));
       } else if (tab === 'THREADS' && selectedThread) {
         const res = await apiFetch<{ thread: DirectMessageThread }>(
           `/api/messages/${selectedThread.id}/reply`,
@@ -131,7 +227,7 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
             body: JSON.stringify({ body: replyText }),
           }
         );
-        setThreads((prev) => prev.map((t) => (t.id === res.thread.id ? res.thread : t)));
+        setThreads((prev) => prev.map((th) => (th.id === res.thread.id ? res.thread : th)));
       }
       setReplyText('');
     } catch (err) {
@@ -139,50 +235,106 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
     }
   };
 
+  const handleSaveEditedMessage = async (msgId: string) => {
+    if (!editingMsgBody.trim()) return;
+    setError('');
+    try {
+      if (tab === 'SUPPORT' && selectedTicket) {
+        const res = await apiFetch<{ ticket: SupportTicket }>(
+          `/api/tickets/${selectedTicket.id}/messages/${msgId}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ body: editingMsgBody }),
+          }
+        );
+        setTickets((prev) => prev.map((tk) => (tk.id === res.ticket.id ? res.ticket : tk)));
+      } else if (tab === 'THREADS' && selectedThread) {
+        const res = await apiFetch<{ thread: DirectMessageThread }>(
+          `/api/messages/${selectedThread.id}/messages/${msgId}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ body: editingMsgBody }),
+          }
+        );
+        setThreads((prev) => prev.map((th) => (th.id === res.thread.id ? res.thread : th)));
+      }
+      setEditingMsgId(null);
+      setEditingMsgBody('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to edit message.');
+    }
+  };
+
+  const handleDeleteMessage = async (msgId: string) => {
+    setError('');
+    try {
+      if (tab === 'SUPPORT' && selectedTicket) {
+        const res = await apiFetch<{ ticket: SupportTicket }>(
+          `/api/tickets/${selectedTicket.id}/messages/${msgId}`,
+          { method: 'DELETE' }
+        );
+        setTickets((prev) => prev.map((tk) => (tk.id === res.ticket.id ? res.ticket : tk)));
+      } else if (tab === 'THREADS' && selectedThread) {
+        const res = await apiFetch<{ thread: DirectMessageThread }>(
+          `/api/messages/${selectedThread.id}/messages/${msgId}`,
+          { method: 'DELETE' }
+        );
+        setThreads((prev) => prev.map((th) => (th.id === res.thread.id ? res.thread : th)));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete message.');
+    }
+  };
+
   const handleTicketStatus = async (ticketId: string, status: SupportTicket['status']) => {
     try {
-      const res = await apiFetch<{ ticket: SupportTicket }>(`/api/tickets/${ticketId}/reply`, {
-        method: 'POST',
-        body: JSON.stringify({ body: `Case status updated to ${status}.`, status }),
+      const res = await apiFetch<{ ticket: SupportTicket }>(`/api/tickets/${ticketId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
       });
-      setTickets((prev) => prev.map((t) => (t.id === res.ticket.id ? res.ticket : t)));
+      setTickets((prev) => prev.map((tk) => (tk.id === res.ticket.id ? res.ticket : tk)));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update ticket status.');
     }
   };
 
+  const fieldCls =
+    'w-full rounded-lg border border-[var(--ak-border)] bg-[var(--ak-recessed)] px-3 py-2 text-sm text-[var(--ak-ink)] placeholder:text-[var(--ak-muted)] focus:border-[#C9642E] focus:outline-none';
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#C8BFA8] pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--ak-divider)] pb-4">
         <div>
-          <h2 className="text-xl font-semibold text-slate-900">
-            {t.commsHeading}
-          </h2>
-          <p className="mt-1 text-sm text-slate-600">
-            {t.commsSub}
-          </p>
+          <h2 className="text-xl font-semibold text-[var(--ak-ink)]">{t.commsHeading}</h2>
+          <p className="mt-1 text-sm text-[var(--ak-muted)]">{t.commsSub}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center gap-1 rounded-lg bg-[#E6E0D3] p-1">
+          <div className="flex flex-wrap items-center gap-1 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-recessed)] p-1">
             <button
               type="button"
-              onClick={() => setTab('THREADS')}
+              onClick={() => {
+                setTab('THREADS');
+                setEditingMsgId(null);
+              }}
               className={`rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                 tab === 'THREADS'
-                  ? 'bg-[#F6F3EB] text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#C9642E] text-[#F8F5EE]'
+                  : 'text-[var(--ak-ink-2)] hover:text-[var(--ak-ink)]'
               }`}
             >
               {t.tabAcademicThreads} ({threads.length})
             </button>
             <button
               type="button"
-              onClick={() => setTab('SUPPORT')}
+              onClick={() => {
+                setTab('SUPPORT');
+                setEditingMsgId(null);
+              }}
               className={`rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                 tab === 'SUPPORT'
-                  ? 'bg-[#F6F3EB] text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#C9642E] text-[#F8F5EE]'
+                  : 'text-[var(--ak-ink-2)] hover:text-[var(--ak-ink)]'
               }`}
             >
               {t.tabMasterAdminDesk} ({tickets.length})
@@ -193,7 +345,7 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
             <button
               type="button"
               onClick={() => setShowNewTicket((v) => !v)}
-              className="rounded-lg bg-[#0C1B2E] px-4 py-2 text-sm font-medium text-white hover:bg-[#1A2F4A] whitespace-nowrap shrink-0"
+              className="rounded-lg bg-[#C9642E] px-4 py-2 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] whitespace-nowrap shrink-0"
             >
               {t.newSupportTicket}
             </button>
@@ -207,7 +359,7 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
                   setRecipientId(availableRecipients[0].id);
                 }
               }}
-              className="rounded-lg bg-[#0C1B2E] px-4 py-2 text-sm font-medium text-white hover:bg-[#1A2F4A] whitespace-nowrap shrink-0"
+              className="rounded-lg bg-[#C9642E] px-4 py-2 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] whitespace-nowrap shrink-0"
             >
               {t.newMessageThread}
             </button>
@@ -216,7 +368,7 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="rounded-lg border border-[var(--ak-err-bd)] bg-[var(--ak-err-bg)] px-4 py-3 text-sm text-[var(--ak-err-fg)]">
           {error}
         </div>
       )}
@@ -224,27 +376,29 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
       {showNewTicket && tab === 'SUPPORT' && (
         <form
           onSubmit={handleCreateTicket}
-          className="space-y-4 rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-5"
+          className="space-y-4 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-5"
         >
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900">
+            <h3 className="text-sm font-semibold text-[var(--ak-ink)]">
               Submit Support or Compliance Ticket to Master Admin
             </h3>
             <button
               type="button"
               onClick={() => setShowNewTicket(false)}
-              className="text-sm text-slate-500 hover:text-slate-800"
+              className="text-sm text-[var(--ak-muted)] hover:text-[var(--ak-ink)]"
             >
               Cancel
             </button>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Category</label>
+              <label className="mb-1 block text-sm font-medium text-[var(--ak-ink-2)]">Category</label>
               <select
                 value={ticketCategory}
-                onChange={(e) => setTicketCategory(e.target.value as SupportTicket['category'])}
-                className="w-full rounded-lg border border-[#C8BFA8] bg-[#F6F3EB] px-3 py-2 text-sm text-slate-900"
+                onChange={(e) =>
+                  setTicketCategory(e.target.value as SupportTicket['category'])
+                }
+                className={fieldCls}
               >
                 <option value="KYC_APPEAL">KYC / ID Verification Inquiry</option>
                 <option value="SUBSCRIPTION">Subscription &amp; Billing</option>
@@ -254,31 +408,31 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Subject</label>
+              <label className="mb-1 block text-sm font-medium text-[var(--ak-ink-2)]">Subject</label>
               <input
                 type="text"
                 required
                 value={ticketSubject}
                 onChange={(e) => setTicketSubject(e.target.value)}
                 placeholder="Brief summary of your request"
-                className="w-full rounded-lg border border-[#C8BFA8] px-3 py-2 text-sm text-slate-900"
+                className={fieldCls}
               />
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Message</label>
+            <label className="mb-1 block text-sm font-medium text-[var(--ak-ink-2)]">Message</label>
             <textarea
               required
               rows={3}
               value={ticketBody}
               onChange={(e) => setTicketBody(e.target.value)}
               placeholder="Provide details for the Master Admin support team..."
-              className="w-full rounded-lg border border-[#C8BFA8] px-3 py-2 text-sm text-slate-900"
+              className={fieldCls}
             />
           </div>
           <button
             type="submit"
-            className="rounded-lg bg-[#0C1B2E] px-4 py-2 text-sm font-medium text-white hover:bg-[#1A2F4A]"
+            className="rounded-lg bg-[#C9642E] px-4 py-2 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C]"
           >
             Submit Ticket
           </button>
@@ -288,27 +442,27 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
       {showNewThread && tab === 'THREADS' && availableRecipients.length > 0 && (
         <form
           onSubmit={handleCreateThread}
-          className="space-y-4 rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-5"
+          className="space-y-4 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-5"
         >
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900">
+            <h3 className="text-sm font-semibold text-[var(--ak-ink)]">
               Start Protected Academic Thread
             </h3>
             <button
               type="button"
               onClick={() => setShowNewThread(false)}
-              className="text-sm text-slate-500 hover:text-slate-800"
+              className="text-sm text-[var(--ak-muted)] hover:text-[var(--ak-ink)]"
             >
               Cancel
             </button>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Recipient</label>
+              <label className="mb-1 block text-sm font-medium text-[var(--ak-ink-2)]">Recipient</label>
               <select
                 value={recipientId}
                 onChange={(e) => setRecipientId(e.target.value)}
-                className="w-full rounded-lg border border-[#C8BFA8] bg-[#F6F3EB] px-3 py-2 text-sm text-slate-900"
+                className={fieldCls}
               >
                 {availableRecipients.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -318,31 +472,31 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Topic</label>
+              <label className="mb-1 block text-sm font-medium text-[var(--ak-ink-2)]">Topic</label>
               <input
                 type="text"
                 required
                 value={threadTitle}
                 onChange={(e) => setThreadTitle(e.target.value)}
                 placeholder="e.g. Prerequisite check or syllabus question"
-                className="w-full rounded-lg border border-[#C8BFA8] px-3 py-2 text-sm text-slate-900"
+                className={fieldCls}
               />
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Message</label>
+            <label className="mb-1 block text-sm font-medium text-[var(--ak-ink-2)]">Message</label>
             <textarea
               required
               rows={3}
               value={threadBody}
               onChange={(e) => setThreadBody(e.target.value)}
               placeholder="Write your academic message (confidential contact info stays protected)..."
-              className="w-full rounded-lg border border-[#C8BFA8] px-3 py-2 text-sm text-slate-900"
+              className={fieldCls}
             />
           </div>
           <button
             type="submit"
-            className="rounded-lg bg-[#0C1B2E] px-4 py-2 text-sm font-medium text-white hover:bg-[#1A2F4A]"
+            className="rounded-lg bg-[#C9642E] px-4 py-2 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C]"
           >
             Send Message
           </button>
@@ -350,47 +504,53 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
       )}
 
       {loading ? (
-        <div className="rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-8 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-8 text-center text-sm text-[var(--ak-muted)]">
           Loading communication channels...
         </div>
       ) : (
-        <div className="grid min-h-[420px] overflow-hidden rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] lg:grid-cols-12">
+        <div className="grid min-h-[420px] overflow-hidden rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] lg:grid-cols-12">
           {/* List column */}
-          <div className="border-b border-[#C8BFA8] lg:col-span-4 lg:border-b-0 lg:border-r">
+          <div className="border-b border-[var(--ak-divider)] bg-[var(--ak-recessed)] lg:col-span-4 lg:border-b-0 lg:border-r">
             {tab === 'SUPPORT' ? (
               tickets.length === 0 ? (
-                <div className="p-6 text-sm text-slate-500">
+                <div className="p-6 text-sm text-[var(--ak-muted)]">
                   No support tickets yet. Open a ticket anytime to reach Master Admin support.
                 </div>
               ) : (
-                <div className="divide-y divide-slate-100">
-                  {tickets.map((t) => (
+                <div className="divide-y divide-[var(--ak-divider)]">
+                  {tickets.map((tk) => (
                     <button
-                      key={t.id}
+                      key={tk.id}
                       type="button"
-                      onClick={() => setSelectedTicketId(t.id)}
+                      onClick={() => {
+                        setSelectedTicketId(tk.id);
+                        setEditingTicket(false);
+                        setEditingMsgId(null);
+                      }}
                       className={`w-full px-4 py-3.5 text-left transition-colors ${
-                        selectedTicket?.id === t.id ? 'bg-[#EFECE3]' : 'hover:bg-[#EFECE3]/70'
+                        selectedTicket?.id === tk.id
+                          ? 'bg-[var(--ak-elevated)]'
+                          : 'hover:bg-[var(--ak-elevated)]/60'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium text-slate-900">
-                          {t.subject}
+                        <span className="truncate text-sm font-semibold text-[var(--ak-ink)]">
+                          {tk.subject}
                         </span>
                       </div>
-                      <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                        <span>{t.userName}</span>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-[var(--ak-muted)]">
+                        <span>{tk.userName}</span>
                         <span aria-hidden="true">·</span>
                         <span
                           className={
-                            t.status === 'RESOLVED'
-                              ? 'text-emerald-700 font-medium'
-                              : t.status === 'IN_REVIEW'
-                                ? 'text-amber-700 font-medium'
-                                : 'text-blue-900 font-medium'
+                            tk.status === 'RESOLVED'
+                              ? 'text-[var(--ak-ok-fg)] font-semibold'
+                              : tk.status === 'IN_REVIEW'
+                                ? 'text-[var(--ak-warn-fg)] font-semibold'
+                                : 'text-[var(--ak-accent-ink)] font-semibold'
                           }
                         >
-                          {t.status}
+                          {tk.status}
                         </span>
                       </div>
                     </button>
@@ -398,24 +558,29 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
                 </div>
               )
             ) : threads.length === 0 ? (
-              <div className="p-6 text-sm text-slate-500">
+              <div className="p-6 text-sm text-[var(--ak-muted)]">
                 No academic threads yet. Course enrollment inquiries and educator Q&amp;A appear here.
               </div>
             ) : (
-              <div className="divide-y divide-slate-100">
+              <div className="divide-y divide-[var(--ak-divider)]">
                 {threads.map((thr) => (
                   <button
                     key={thr.id}
                     type="button"
-                    onClick={() => setSelectedThreadId(thr.id)}
+                    onClick={() => {
+                      setSelectedThreadId(thr.id);
+                      setEditingMsgId(null);
+                    }}
                     className={`w-full px-4 py-3.5 text-left transition-colors ${
-                      selectedThread?.id === thr.id ? 'bg-[#EFECE3]' : 'hover:bg-[#EFECE3]/70'
+                      selectedThread?.id === thr.id
+                        ? 'bg-[var(--ak-elevated)]'
+                        : 'hover:bg-[var(--ak-elevated)]/60'
                     }`}
                   >
-                    <p className="truncate text-sm font-medium text-slate-900">
+                    <p className="truncate text-sm font-semibold text-[var(--ak-ink)]">
                       {thr.contextTitle}
                     </p>
-                    <p className="mt-1 truncate text-sm text-slate-500">
+                    <p className="mt-1 truncate text-xs text-[var(--ak-muted)]">
                       {Object.values(thr.participantNames).join(' · ')}
                     </p>
                   </button>
@@ -428,76 +593,206 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
           <div className="flex flex-col lg:col-span-8">
             {tab === 'SUPPORT' && selectedTicket ? (
               <>
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#C8BFA8] px-5 py-3.5">
-                  <div>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ak-divider)] px-5 py-3.5">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <ShieldAlert className="h-4 w-4 text-blue-900" />
-                      <h3 className="text-sm font-semibold text-slate-900">
+                      <ShieldAlert className="h-4 w-4 shrink-0 text-[var(--ak-accent-ink)]" />
+                      <h3 className="truncate text-sm font-semibold text-[var(--ak-ink)]">
                         {selectedTicket.subject}
                       </h3>
                     </div>
-                    <p className="mt-0.5 text-sm text-slate-500">
+                    <p className="mt-0.5 text-xs text-[var(--ak-muted)]">
                       {selectedTicket.category} · Opened by {selectedTicket.userName} · Status:{' '}
                       {selectedTicket.status}
                     </p>
                   </div>
-                  {currentUser.role === 'MASTER_ADMIN' && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleTicketStatus(selectedTicket.id, 'IN_REVIEW')}
-                        className="rounded-md border border-[#C8BFA8] px-2.5 py-1 text-sm font-medium text-slate-700 hover:bg-[#EFECE3]"
-                      >
-                        Mark In Review
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleTicketStatus(selectedTicket.id, 'RESOLVED')}
-                        className="rounded-md bg-emerald-700 px-2.5 py-1 text-sm font-medium text-white hover:bg-emerald-800"
-                      >
-                        Resolve
-                      </button>
-                    </div>
-                  )}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {currentUser.role === 'MASTER_ADMIN' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleTicketStatus(selectedTicket.id, 'IN_REVIEW')}
+                          className="rounded-md border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-2.5 py-1 text-xs font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)]"
+                        >
+                          Mark In Review
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleTicketStatus(selectedTicket.id, 'RESOLVED')}
+                          className="rounded-md bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-[#F8F5EE] hover:bg-emerald-600"
+                        >
+                          Resolve
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      title="Edit Ticket"
+                      onClick={() => {
+                        setEditingTicket((v) => !v);
+                        setEditTicketSubject(selectedTicket.subject);
+                        setEditTicketCategory(selectedTicket.category);
+                        setEditTicketStatus(selectedTicket.status);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-2.5 py-1 text-xs font-semibold text-[var(--ak-ink-2)] hover:text-[var(--ak-ink)]"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      title="Delete Ticket"
+                      onClick={() => handleDeleteTicket(selectedTicket.id)}
+                      className="inline-flex items-center gap-1 rounded-md border border-[var(--ak-err-bd)] bg-[var(--ak-err-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--ak-err-fg)] hover:opacity-90"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex-1 space-y-3 overflow-y-auto p-5 max-h-[340px]">
-                  {selectedTicket.messages.map((m) => (
-                    <div
-                      key={m.id}
-                      className={`rounded-lg border px-4 py-3 text-sm ${
-                        m.senderId === currentUser.id
-                          ? 'ml-8 border-blue-200 bg-blue-50/50'
-                          : 'mr-8 border-[#C8BFA8] bg-[#EFECE3]'
-                      }`}
+                {editingTicket && (
+                  <form
+                    onSubmit={handleUpdateTicket}
+                    className="grid gap-3 border-b border-[var(--ak-divider)] bg-[var(--ak-recessed)] p-4 sm:grid-cols-3"
+                  >
+                    <input
+                      type="text"
+                      required
+                      value={editTicketSubject}
+                      onChange={(e) => setEditTicketSubject(e.target.value)}
+                      className={fieldCls}
+                    />
+                    <select
+                      value={editTicketCategory}
+                      onChange={(e) =>
+                        setEditTicketCategory(e.target.value as SupportTicket['category'])
+                      }
+                      className={fieldCls}
                     >
-                      <div className="mb-1 flex items-center justify-between text-sm text-slate-500">
-                        <span className="font-medium text-slate-800">
-                          {m.senderName} · {m.senderRole.replace('_', ' ')}
-                        </span>
-                        <span className="tabular-nums">
-                          {new Date(m.timestamp).toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="whitespace-pre-wrap text-slate-800">{m.body}</p>
+                      <option value="KYC_APPEAL">KYC_APPEAL</option>
+                      <option value="SUBSCRIPTION">SUBSCRIPTION</option>
+                      <option value="CONTENT_REPORT">CONTENT_REPORT</option>
+                      <option value="ACADEMIC_DISPUTE">ACADEMIC_DISPUTE</option>
+                      <option value="GENERAL">GENERAL</option>
+                    </select>
+                    <div className="flex gap-2">
+                      {currentUser.role === 'MASTER_ADMIN' && (
+                        <select
+                          value={editTicketStatus}
+                          onChange={(e) =>
+                            setEditTicketStatus(e.target.value as SupportTicket['status'])
+                          }
+                          className={fieldCls}
+                        >
+                          <option value="OPEN">OPEN</option>
+                          <option value="IN_REVIEW">IN_REVIEW</option>
+                          <option value="RESOLVED">RESOLVED</option>
+                        </select>
+                      )}
+                      <button
+                        type="submit"
+                        className="rounded-lg bg-[#C9642E] px-3 py-1.5 text-xs font-semibold text-[#F8F5EE] shrink-0"
+                      >
+                        Save
+                      </button>
                     </div>
-                  ))}
+                  </form>
+                )}
+
+                <div className="flex-1 space-y-3 overflow-y-auto p-5 max-h-[360px]">
+                  {selectedTicket.messages.map((m) => {
+                    const canModifyMsg =
+                      currentUser.role === 'MASTER_ADMIN' || m.senderId === currentUser.id;
+                    const isMine = m.senderId === currentUser.id;
+                    return (
+                      <div
+                        key={m.id}
+                        className={`rounded-lg border px-4 py-3 text-sm ${
+                          isMine
+                            ? 'ml-6 border-[#C9642E]/45 bg-[var(--ak-elevated)]'
+                            : 'mr-6 border-[var(--ak-divider)] bg-[var(--ak-recessed)]'
+                        }`}
+                      >
+                        <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--ak-muted)]">
+                          <span className="font-semibold text-[var(--ak-accent-ink)]">
+                            {m.senderName} · {m.senderRole.replace('_', ' ')}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="tabular-nums">
+                              {new Date(m.timestamp).toLocaleString()}
+                            </span>
+                            {canModifyMsg && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingMsgId(m.id);
+                                    setEditingMsgBody(m.body);
+                                  }}
+                                  className="text-[var(--ak-muted)] hover:text-[var(--ak-ink)]"
+                                  title="Edit message"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMessage(m.id)}
+                                  className="text-[var(--ak-muted)] hover:text-[var(--ak-err-fg)]"
+                                  title="Delete message"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {editingMsgId === m.id ? (
+                          <div className="mt-2 flex gap-2">
+                            <input
+                              type="text"
+                              value={editingMsgBody}
+                              onChange={(e) => setEditingMsgBody(e.target.value)}
+                              className={fieldCls}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditedMessage(m.id)}
+                              className="rounded-lg bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-white"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingMsgId(null)}
+                              className="rounded-lg border border-[var(--ak-border)] px-2.5 py-1 text-xs text-[var(--ak-ink-2)]"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="whitespace-pre-wrap text-[var(--ak-ink)]">{m.body}</p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <form
                   onSubmit={handleSendReply}
-                  className="flex items-center gap-2 border-t border-[#C8BFA8] p-4"
+                  className="flex items-center gap-2 border-t border-[var(--ak-divider)] p-4"
                 >
                   <input
                     type="text"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     placeholder="Write an official reply..."
-                    className="flex-1 rounded-lg border border-[#C8BFA8] px-3 py-2 text-sm text-slate-900 focus:border-blue-900 focus:outline-none"
+                    className={fieldCls}
                   />
                   <button
                     type="submit"
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#0C1B2E] px-4 py-2 text-sm font-medium text-white hover:bg-[#1A2F4A]"
+                    className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg bg-[#C9642E] px-4 py-2 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] shrink-0"
                   >
                     <Send className="h-3.5 w-3.5" />
                     {t.sendReply}
@@ -506,53 +801,118 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
               </>
             ) : tab === 'THREADS' && selectedThread ? (
               <>
-                <div className="border-b border-[#C8BFA8] px-5 py-3.5">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4 text-blue-900" />
-                    <h3 className="text-sm font-semibold text-slate-900">
-                      {selectedThread.contextTitle}
-                    </h3>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ak-divider)] px-5 py-3.5">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 shrink-0 text-[var(--ak-accent-ink)]" />
+                      <h3 className="truncate text-sm font-semibold text-[var(--ak-ink)]">
+                        {selectedThread.contextTitle}
+                      </h3>
+                    </div>
+                    <p className="mt-0.5 text-xs text-[var(--ak-muted)]">
+                      Participants: {Object.values(selectedThread.participantNames).join(' · ')}
+                    </p>
                   </div>
-                  <p className="mt-0.5 text-sm text-slate-500">
-                    Participants: {Object.values(selectedThread.participantNames).join(' · ')}
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteThread(selectedThread.id)}
+                    className="inline-flex items-center gap-1 rounded-md border border-[var(--ak-err-bd)] bg-[var(--ak-err-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--ak-err-fg)] hover:opacity-90"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete Thread
+                  </button>
                 </div>
 
-                <div className="flex-1 space-y-3 overflow-y-auto p-5 max-h-[340px]">
-                  {selectedThread.messages.map((m) => (
-                    <div
-                      key={m.id}
-                      className={`rounded-lg border px-4 py-3 text-sm ${
-                        m.senderId === currentUser.id
-                          ? 'ml-8 border-blue-200 bg-blue-50/50'
-                          : 'mr-8 border-[#C8BFA8] bg-[#EFECE3]'
-                      }`}
-                    >
-                      <div className="mb-1 flex items-center justify-between text-sm text-slate-500">
-                        <span className="font-medium text-slate-800">{m.senderName}</span>
-                        <span className="tabular-nums">
-                          {new Date(m.timestamp).toLocaleString()}
-                        </span>
+                <div className="flex-1 space-y-3 overflow-y-auto p-5 max-h-[360px]">
+                  {selectedThread.messages.map((m) => {
+                    const canModifyMsg =
+                      currentUser.role === 'MASTER_ADMIN' || m.senderId === currentUser.id;
+                    const isMine = m.senderId === currentUser.id;
+                    return (
+                      <div
+                        key={m.id}
+                        className={`rounded-lg border px-4 py-3 text-sm ${
+                          isMine
+                            ? 'ml-6 border-[#C9642E]/45 bg-[var(--ak-elevated)]'
+                            : 'mr-6 border-[var(--ak-divider)] bg-[var(--ak-recessed)]'
+                        }`}
+                      >
+                        <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--ak-muted)]">
+                          <span className="font-semibold text-[var(--ak-accent-ink)]">{m.senderName}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="tabular-nums">
+                              {new Date(m.timestamp).toLocaleString()}
+                            </span>
+                            {canModifyMsg && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingMsgId(m.id);
+                                    setEditingMsgBody(m.body);
+                                  }}
+                                  className="text-[var(--ak-muted)] hover:text-[var(--ak-ink)]"
+                                  title="Edit message"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMessage(m.id)}
+                                  className="text-[var(--ak-muted)] hover:text-[var(--ak-err-fg)]"
+                                  title="Delete message"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {editingMsgId === m.id ? (
+                          <div className="mt-2 flex gap-2">
+                            <input
+                              type="text"
+                              value={editingMsgBody}
+                              onChange={(e) => setEditingMsgBody(e.target.value)}
+                              className={fieldCls}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditedMessage(m.id)}
+                              className="rounded-lg bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-white"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingMsgId(null)}
+                              className="rounded-lg border border-[var(--ak-border)] px-2.5 py-1 text-xs text-[var(--ak-ink-2)]"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="whitespace-pre-wrap text-[var(--ak-ink)]">{m.body}</p>
+                        )}
                       </div>
-                      <p className="whitespace-pre-wrap text-slate-800">{m.body}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <form
                   onSubmit={handleSendReply}
-                  className="flex items-center gap-2 border-t border-[#C8BFA8] p-4"
+                  className="flex items-center gap-2 border-t border-[var(--ak-divider)] p-4"
                 >
                   <input
                     type="text"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     placeholder="Reply inside protected course thread..."
-                    className="flex-1 rounded-lg border border-[#C8BFA8] px-3 py-2 text-sm text-slate-900 focus:border-blue-900 focus:outline-none"
+                    className={fieldCls}
                   />
                   <button
                     type="submit"
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#0C1B2E] px-4 py-2 text-sm font-medium text-white hover:bg-[#1A2F4A]"
+                    className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg bg-[#C9642E] px-4 py-2 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] shrink-0"
                   >
                     <Send className="h-3.5 w-3.5" />
                     {t.sendReply}
@@ -560,7 +920,7 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
                 </form>
               </>
             ) : (
-              <div className="flex flex-1 items-center justify-center p-8 text-sm text-slate-500">
+              <div className="flex flex-1 items-center justify-center p-8 text-sm text-[var(--ak-muted)]">
                 Select a conversation on the left to view messages.
               </div>
             )}

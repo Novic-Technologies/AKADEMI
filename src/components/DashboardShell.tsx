@@ -5,10 +5,14 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  UserCog,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LanguageSelector, useI18n } from '../lib/i18n';
+import { ThemeToggle } from '../lib/theme';
+import type { UserProfile } from '../types/akademi';
+import { AccountSettingsModal } from './AccountSettingsModal';
 import { BrandMark } from './BrandMark';
 
 export interface DashboardNavItem {
@@ -25,6 +29,9 @@ interface DashboardShellProps {
   breadcrumbRight: string;
   userName: string;
   userMeta: string;
+  currentUser?: UserProfile;
+  onUserUpdated?: (user: UserProfile) => void;
+  educationLevels?: string[];
   navItems: DashboardNavItem[];
   activeTab: string;
   onSelectTab: (id: string) => void;
@@ -42,6 +49,9 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   breadcrumbRight,
   userName,
   userMeta,
+  currentUser,
+  onUserUpdated,
+  educationLevels,
   navItems,
   activeTab,
   onSelectTab,
@@ -54,12 +64,16 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   const { t, dir } = useI18n();
   const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
 
   return (
-    <div dir={dir} className="flex min-h-screen w-full max-w-full overflow-x-hidden bg-[#EFECE3] text-[#0C1B2E]">
-      {/* Desktop Sidebar (Minimizable between full rail & compact icon rail) */}
+    <div
+      dir={dir}
+      className="flex min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--ak-canvas)] text-[var(--ak-ink)]"
+    >
+      {/* Desktop Sidebar */}
       <aside
-        className={`hidden shrink-0 flex-col justify-between border-e border-[#C8BFA8] bg-[#F6F3EB] transition-all duration-200 lg:flex ${
+        className={`hidden shrink-0 flex-col justify-between border-e border-[var(--ak-divider)] bg-[var(--ak-surface)] transition-all duration-200 lg:flex ${
           sidebarMinimized ? 'w-20 p-3' : 'w-72 p-5'
         }`}
       >
@@ -69,7 +83,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
               type="button"
               onClick={onGoPublic}
               title={t.publicView}
-              className="text-start focus-visible:outline-2 focus-visible:outline-[#0C1B2E]"
+              className="text-start focus-visible:outline-2 focus-visible:outline-[#C9642E]"
             >
               <BrandMark brandName={brandName} logoUrl={logoUrl} compact={sidebarMinimized} />
             </button>
@@ -78,7 +92,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
               onClick={() => setSidebarMinimized((v) => !v)}
               aria-label={sidebarMinimized ? t.expandSidebar : t.minimizeSidebar}
               title={sidebarMinimized ? t.expandSidebar : t.minimizeSidebar}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#C8BFA8] bg-[#EFECE3] text-[#0C1B2E] hover:bg-[#E6E0D3]"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)]"
             >
               {sidebarMinimized ? (
                 <PanelLeftOpen className="h-4 w-4" />
@@ -103,10 +117,10 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
                     sidebarMinimized ? 'justify-center' : 'justify-between gap-2.5'
                   } ${
                     active
-                      ? 'bg-[#0C1B2E] text-[#F6F3EB]'
+                      ? 'bg-[#C9642E] text-[#F8F5EE]'
                       : item.locked
-                        ? 'cursor-not-allowed text-[#7A756B] opacity-70'
-                        : 'text-[#2D3D50] hover:bg-[#E6E0D3] hover:text-[#0C1B2E]'
+                        ? 'cursor-not-allowed text-[var(--ak-muted)] opacity-55'
+                        : 'text-[var(--ak-ink-2)] hover:bg-[var(--ak-elevated)] hover:text-[var(--ak-ink)]'
                   }`}
                 >
                   <span className="flex items-center gap-3 truncate">
@@ -122,11 +136,11 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
           {!sidebarMinimized && sidebarFooterAddon}
         </div>
 
-        <div className="border-t border-[#D4CCB9] pt-4">
+        <div className="border-t border-[var(--ak-divider)] pt-4">
           {!sidebarMinimized && (
             <div className="mb-3">
-              <p className="truncate text-sm font-bold text-[#0C1B2E]">{userName}</p>
-              <p className="truncate text-sm text-[#4A463F]">{userMeta}</p>
+              <p className="truncate text-sm font-bold text-[var(--ak-ink)]">{userName}</p>
+              <p className="truncate text-sm text-[var(--ak-muted)]">{userMeta}</p>
             </div>
           )}
           <div className={`flex items-center gap-2 ${sidebarMinimized ? 'flex-col' : ''}`}>
@@ -134,9 +148,20 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
               <button
                 type="button"
                 onClick={onGoPublic}
-                className="min-h-[40px] flex-1 rounded-lg border border-[#C8BFA8] bg-[#EFECE3] px-3 py-2 text-sm font-semibold text-[#0C1B2E] hover:bg-[#E6E0D3]"
+                className="min-h-[40px] flex-1 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-3 py-2 text-sm font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)]"
               >
                 {t.publicView}
+              </button>
+            )}
+            {currentUser && onUserUpdated && (
+              <button
+                type="button"
+                onClick={() => setShowAccountSettings(true)}
+                title="Profile & Security"
+                aria-label="Profile & Security"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)]"
+              >
+                <UserCog className="h-4 w-4" />
               </button>
             )}
             <button
@@ -144,7 +169,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
               onClick={onLogout}
               title={t.signOut}
               aria-label={t.signOut}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#C8BFA8] bg-[#EFECE3] text-[#0C1B2E] hover:bg-[#E6E0D3]"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink)] hover:bg-[var(--ak-err-bg)] hover:border-[var(--ak-err-bd)] hover:text-[var(--ak-err-fg)]"
             >
               <LogOut className="h-4 w-4" />
             </button>
@@ -156,10 +181,11 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       {mobileDrawerOpen && (
         <div className="fixed inset-0 z-50 flex lg:hidden">
           <div
-            className="fixed inset-0 bg-[#0C1B2E]/65 backdrop-blur-xs"
+            className="fixed inset-0 backdrop-blur-xs"
+            style={{ backgroundColor: 'var(--ak-backdrop)' }}
             onClick={() => setMobileDrawerOpen(false)}
           />
-          <aside className="relative z-10 flex w-80 max-w-[88vw] flex-col justify-between border-e border-[#C8BFA8] bg-[#F6F3EB] p-5 shadow-2xl">
+          <aside className="relative z-10 flex w-80 max-w-[88vw] flex-col justify-between border-e border-[var(--ak-divider)] bg-[var(--ak-surface)] p-5 shadow-2xl">
             <div className="overflow-y-auto">
               <div className="mb-5 flex items-center justify-between gap-2">
                 <button type="button" onClick={onGoPublic}>
@@ -169,14 +195,15 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
                   type="button"
                   onClick={() => setMobileDrawerOpen(false)}
                   aria-label="Close menu"
-                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#C8BFA8] bg-[#EFECE3] text-[#0C1B2E]"
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink)]"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <div className="mb-4">
-                <LanguageSelector className="w-full justify-between" />
+              <div className="mb-4 flex items-center gap-2">
+                <LanguageSelector className="flex-1 justify-between" />
+                <ThemeToggle />
               </div>
 
               <nav className="space-y-1.5">
@@ -194,10 +221,10 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
                       }}
                       className={`flex min-h-[44px] w-full items-center justify-between gap-2.5 rounded-lg px-3.5 py-2.5 text-start text-sm font-semibold ${
                         active
-                          ? 'bg-[#0C1B2E] text-[#F6F3EB]'
+                          ? 'bg-[#C9642E] text-[#F8F5EE]'
                           : item.locked
-                            ? 'cursor-not-allowed text-[#7A756B] opacity-70'
-                            : 'text-[#2D3D50] hover:bg-[#E6E0D3]'
+                            ? 'cursor-not-allowed text-[var(--ak-muted)] opacity-55'
+                            : 'text-[var(--ak-ink-2)] hover:bg-[var(--ak-elevated)] hover:text-[var(--ak-ink)]'
                       }`}
                     >
                       <span className="flex items-center gap-3 truncate">
@@ -212,21 +239,33 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
               {sidebarFooterAddon}
             </div>
 
-            <div className="border-t border-[#D4CCB9] pt-4">
-              <p className="truncate text-sm font-bold text-[#0C1B2E]">{userName}</p>
-              <p className="truncate text-sm text-[#4A463F]">{userMeta}</p>
+            <div className="border-t border-[var(--ak-divider)] pt-4">
+              <p className="truncate text-sm font-bold text-[var(--ak-ink)]">{userName}</p>
+              <p className="truncate text-sm text-[var(--ak-muted)]">{userMeta}</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
+                {currentUser && onUserUpdated && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileDrawerOpen(false);
+                      setShowAccountSettings(true);
+                    }}
+                    className="col-span-2 min-h-[40px] rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-3 py-2 text-sm font-semibold text-[var(--ak-ink)]"
+                  >
+                    Profile &amp; Security
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={onGoPublic}
-                  className="min-h-[42px] rounded-lg border border-[#C8BFA8] bg-[#EFECE3] px-3 py-2 text-sm font-semibold text-[#0C1B2E]"
+                  className="min-h-[42px] rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-3 py-2 text-sm font-semibold text-[var(--ak-ink)]"
                 >
                   {t.publicView}
                 </button>
                 <button
                   type="button"
                   onClick={onLogout}
-                  className="min-h-[42px] rounded-lg bg-[#0C1B2E] px-3 py-2 text-sm font-semibold text-[#F6F3EB]"
+                  className="min-h-[42px] rounded-lg bg-[#C9642E] px-3 py-2 text-sm font-semibold text-[#F8F5EE]"
                 >
                   {t.signOut}
                 </button>
@@ -239,31 +278,42 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       {/* Main Content Area */}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="african-weave-rule" />
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D4CCB9] bg-[#F6F3EB] px-4 py-3 sm:px-6">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ak-divider)] bg-[var(--ak-surface)] px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setMobileDrawerOpen(true)}
               aria-label="Open navigation menu"
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#C8BFA8] bg-[#EFECE3] text-[#0C1B2E] lg:hidden"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink)] lg:hidden"
             >
               <Menu className="h-5 w-5" />
             </button>
-            <div className="truncate text-base text-[#2D3D50]">
-              <span className="font-bold text-[#0C1B2E]">{breadcrumbLeft}</span>
-              <span className="mx-2 text-[#A49B87]">/</span>
+            <div className="truncate text-base text-[var(--ak-ink-2)]">
+              <span className="font-bold text-[var(--ak-ink)]">{breadcrumbLeft}</span>
+              <span className="mx-2 text-[var(--ak-muted)]">/</span>
               <span className="font-medium">{breadcrumbRight}</span>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <ThemeToggle compact />
             <LanguageSelector compact />
+            {currentUser && onUserUpdated && (
+              <button
+                type="button"
+                onClick={() => setShowAccountSettings(true)}
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-3 py-1.5 text-sm font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)] whitespace-nowrap shrink-0"
+              >
+                <UserCog className="h-4 w-4 text-[var(--ak-accent-ink)]" />
+                <span className="hidden sm:inline">Profile</span>
+              </button>
+            )}
             {headerRight}
           </div>
         </header>
 
         {/* Quick Scrollable Mobile Strip */}
-        <div className="flex gap-2 overflow-x-auto border-b border-[#D4CCB9] bg-[#E6E0D3] px-4 py-2 lg:hidden">
+        <div className="flex gap-2 overflow-x-auto border-b border-[var(--ak-divider)] bg-[var(--ak-recessed)] px-4 py-2 lg:hidden">
           {navItems.map((item) => (
             <button
               key={item.id}
@@ -272,8 +322,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
               onClick={() => onSelectTab(item.id)}
               className={`min-h-[38px] rounded-lg px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap shrink-0 ${
                 activeTab === item.id
-                  ? 'bg-[#0C1B2E] text-[#F6F3EB]'
-                  : 'bg-[#F6F3EB] text-[#2D3D50] disabled:opacity-45'
+                  ? 'bg-[#C9642E] text-[#F8F5EE]'
+                  : 'border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink-2)] disabled:opacity-45'
               }`}
             >
               {item.label}
@@ -283,6 +333,15 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
 
         <main className="min-w-0 w-full flex-1 space-y-6 p-4 sm:p-6">{children}</main>
       </div>
+
+      {showAccountSettings && currentUser && onUserUpdated && (
+        <AccountSettingsModal
+          user={currentUser}
+          educationLevels={educationLevels}
+          onUserUpdated={onUserUpdated}
+          onClose={() => setShowAccountSettings(false)}
+        />
+      )}
     </div>
   );
 };

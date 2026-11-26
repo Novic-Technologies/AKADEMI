@@ -1,21 +1,72 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
   :root {
+    color-scheme: light;
     --font-display: 'Bricolage Grotesque', 'Plus Jakarta Sans', 'Noto Sans Arabic', system-ui, sans-serif;
     --font-sans: 'Plus Jakarta Sans', 'Noto Sans Arabic', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-    /* Systematic minimal-white African academic palette anchored to the brand emblem (#0C1B2E) */
-    --bg-papyrus: #EFECE3;
-    --bg-sand: #E6E0D3;
-    --surface-stone: #F6F3EB;
-    --border-warm: #D4CCB9;
-    --ink-indigo: #0C1B2E;
-    --ink-slate: #2D3D50;
-    --ink-muted: #55514A;
-    --accent-terracotta: #A44A1C;
-    --accent-forest: #1E5631;
+    /* Default Light Papyrus & Stone Academic Palette */
+    --ak-canvas: #EFECE3;
+    --ak-recessed: #E5DFD0;
+    --ak-surface: #F7F4EC;
+    --ak-elevated: #ECE6D8;
+    --ak-elevated-hover: #DFD7C4;
+    --ak-border: #C9BFA9;
+    --ak-divider: #D6CEBC;
+    --ak-ink: #0C1B2E;
+    --ak-ink-2: #2C3E55;
+    --ak-muted: #525B68;
+    --ak-accent-ink: #9A4115;
+
+    /* Semantic Status Tokens (Light) */
+    --ak-ok-fg: #14532D;
+    --ak-ok-bg: #ECFDF5;
+    --ak-ok-bd: #86EFAC;
+    --ak-warn-fg: #78350F;
+    --ak-warn-bg: #FFFBEB;
+    --ak-warn-bd: #FCD34D;
+    --ak-err-fg: #991B1B;
+    --ak-err-bg: #FEF2F2;
+    --ak-err-bd: #FCA5A5;
+    --ak-info-fg: #1E3A8A;
+    --ak-info-bg: #EFF6FF;
+    --ak-info-bd: #93C5FD;
+    --ak-backdrop: rgba(12, 27, 46, 0.58);
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    /* Toggled Deep Indigo Dark Mode Academic Palette */
+    --ak-canvas: #070D17;
+    --ak-recessed: #09111F;
+    --ak-surface: #0E1A2C;
+    --ak-elevated: #15243A;
+    --ak-elevated-hover: #1E3350;
+    --ak-border: #243852;
+    --ak-divider: #1B2C44;
+    --ak-ink: #F3EFE6;
+    --ak-ink-2: #C2CEDC;
+    --ak-muted: #8FA2B8;
+    --ak-accent-ink: #E8B288;
+
+    /* Semantic Status Tokens (Dark) */
+    --ak-ok-fg: #A7F3D0;
+    --ak-ok-bg: rgba(6, 78, 59, 0.42);
+    --ak-ok-bd: rgba(16, 185, 129, 0.48);
+    --ak-warn-fg: #FDE68A;
+    --ak-warn-bg: rgba(120, 53, 15, 0.42);
+    --ak-warn-bd: rgba(245, 158, 11, 0.48);
+    --ak-err-fg: #FECACA;
+    --ak-err-bg: rgba(127, 29, 29, 0.48);
+    --ak-err-bd: rgba(239, 68, 68, 0.52);
+    --ak-info-fg: #BFDBFE;
+    --ak-info-bg: rgba(30, 58, 138, 0.42);
+    --ak-info-bd: rgba(59, 130, 246, 0.48);
+    --ak-backdrop: rgba(4, 8, 17, 0.8);
   }
 
   html {
@@ -23,16 +74,23 @@
     scroll-behavior: smooth;
     overflow-x: hidden;
     max-width: 100%;
+    background-color: var(--ak-canvas);
+    color: var(--ak-ink);
   }
 
   body {
     font-family: var(--font-sans);
     font-size: 1rem;
     line-height: 1.65;
-    color: var(--ink-indigo);
-    background-color: var(--bg-papyrus);
+    color: var(--ak-ink);
+    background-color: var(--ak-canvas);
     overflow-x: hidden;
     max-width: 100%;
+  }
+
+  select option {
+    background-color: var(--ak-surface);
+    color: var(--ak-ink);
   }
 
   h1, h2, h3, h4, .font-display {
@@ -54,23 +112,23 @@
   text-wrap: balance;
 }
 
-/* Subtle architectural African geometric border rhythm (no flashy gradients) */
+/* Subtle architectural African geometric border rhythm (adapts cleanly to Light & Dark) */
 .african-weave-rule {
-  height: 6px;
+  height: 5px;
   width: 100%;
   background-image: repeating-linear-gradient(
     90deg,
-    #0C1B2E 0px,
-    #0C1B2E 18px,
-    #EFECE3 18px,
-    #EFECE3 22px,
-    #A44A1C 22px,
-    #A44A1C 34px,
-    #EFECE3 34px,
-    #EFECE3 38px,
-    #1E5631 38px,
-    #1E5631 48px,
-    #EFECE3 48px,
-    #EFECE3 52px
+    #1B3252 0px,
+    #1B3252 18px,
+    var(--ak-canvas) 18px,
+    var(--ak-canvas) 22px,
+    #C9642E 22px,
+    #C9642E 34px,
+    var(--ak-canvas) 34px,
+    var(--ak-canvas) 38px,
+    #236B3D 38px,
+    #236B3D 48px,
+    var(--ak-canvas) 48px,
+    var(--ak-canvas) 52px
   );
 }

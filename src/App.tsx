@@ -6,6 +6,7 @@ import { MasterAdminDashboard } from './components/MasterAdminDashboard';
 import { PublicPortal } from './components/PublicPortal';
 import { createAkademiSocket, setAuthToken } from './lib/api';
 import { LanguageProvider } from './lib/i18n';
+import { ThemeProvider } from './lib/theme';
 import type { UserProfile } from './types/akademi';
 
 function AkademiAppContent() {
@@ -78,6 +79,7 @@ function AkademiAppContent() {
       return (
         <MasterAdminDashboard
           currentUser={currentUser}
+          onUserUpdated={(u) => setCurrentUser(u)}
           onLogout={handleLogout}
           onGoPublic={() => setViewMode('PUBLIC')}
         />
@@ -130,8 +132,10 @@ function AkademiAppContent() {
 
 export default function App() {
   return (
-    <LanguageProvider>
-      <AkademiAppContent />
-    </LanguageProvider>
+    <ThemeProvider>
+      <LanguageProvider>
+        <AkademiAppContent />
+      </LanguageProvider>
+    </ThemeProvider>
   );
 }

@@ -7,6 +7,7 @@ import multer from 'multer';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { WebSocket, WebSocketServer } from 'ws';
+import { buildPdfDocumentBuffer } from './server/pdf.ts';
 import {
   AkademiDatabase,
   StoredUser,
@@ -167,6 +168,168 @@ function queueOutboxEmail(
 
 function isContributorRole(role: UserRole): boolean {
   return role === 'SOLO_EDUCATOR' || role === 'INSTITUTION_ADMIN' || role === 'COURSE_ADMIN';
+}
+
+function canManageCourse(actor: StoredUser, course: CourseItem): boolean {
+  return (
+    actor.role === 'MASTER_ADMIN' ||
+    course.ownerId === actor.id ||
+    Boolean(actor.institutionId && course.institutionId === actor.institutionId)
+  );
+}
+
+function canAttachResource(actor: StoredUser, res: ResourceItem): boolean {
+  return (
+    actor.role === 'MASTER_ADMIN' ||
+    res.accessTier === 'PUBLIC_FREE' ||
+    res.ownerId === actor.id ||
+    Boolean(actor.institutionId && res.institutionId === actor.institutionId)
+  );
+}
+
+function filterAttachableResourceIds(actor: StoredUser, ids: string[]): string[] {
+  const unique = Array.from(new Set(ids.map(String)));
+  return unique.filter((id) => {
+    const resObj = db.resources.find((r) => r.id === id);
+    return Boolean(resObj && canAttachResource(actor, resObj));
+  });
+}
+
+function sanitizeSafeExternalUrl(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.toString();
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isActiveMarkupFile(fileName: string): boolean {
+  const ext = path.extname(fileName || '').toLowerCase();
+  return ['.html', '.htm', '.svg', '.xhtml', '.xml'].includes(ext);
+}
+
+const DOC_ONLY_EXTS = ['.pdf', '.doc', '.docx', '.odt', '.rtf'];
+const SCAN_IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp'];
+const CREDENTIAL_DOC_EXTS = [...DOC_ONLY_EXTS, ...SCAN_IMAGE_EXTS];
+const ID_SCAN_EXTS = ['.pdf', ...SCAN_IMAGE_EXTS];
+const BOOK_DOC_EXTS = ['.pdf', '.docx', '.epub'];
+const VIDEO_MEDIA_EXTS = ['.mp4', '.webm', '.mov', '.m4v'];
+
+function allowedExtensionsForResourceType(type: ResourceType): string[] {
+  switch (type) {
+    case 'PDF':
+      return ['.pdf'];
+    case 'DOCX':
+      return ['.docx', '.doc', '.odt', '.rtf', '.pdf'];
+    case 'BOOK':
+      return BOOK_DOC_EXTS;
+    case 'IMAGE':
+      return SCAN_IMAGE_EXTS;
+    case 'VIDEO':
+      return VIDEO_MEDIA_EXTS;
+    default:
+      return DOC_ONLY_EXTS;
+  }
+}
+
+function verifyUploadedFileSignature(
+  file: Express.Multer.File,
+  allowedExts: string[]
+): { ok: true; ext: string } | { ok: false; error: string } {
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  if (!ext || !allowedExts.includes(ext)) {
+    return {
+      ok: false,
+      error: `Unsupported file format "${ext || 'unknown'}". Plain text or markup files are not permitted; upload a verified document (${allowedExts.join(', ')}).`,
+    };
+  }
+  try {
+    const fd = fs.openSync(file.path, 'r');
+    const head = Buffer.alloc(16);
+    const bytesRead = fs.readSync(fd, head, 0, 16, 0);
+    fs.closeSync(fd);
+    if (bytesRead < 4) {
+      return { ok: false, error: 'Uploaded file appears empty or corrupted.' };
+    }
+    const ascii4 = head.subarray(0, 4).toString('latin1');
+    const ascii5 = head.subarray(0, 5).toString('latin1');
+    const isZip = head[0] === 0x50 && head[1] === 0x4b && (head[2] === 0x03 || head[2] === 0x05);
+    const isOle = head[0] === 0xd0 && head[1] === 0xcf && head[2] === 0x11 && head[3] === 0xe0;
+    const isPng = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47;
+    const isJpeg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+    const isWebp =
+      head.subarray(0, 4).toString('latin1') === 'RIFF' &&
+      head.subarray(8, 12).toString('latin1') === 'WEBP';
+    const isMp4 = head.subarray(4, 8).toString('latin1') === 'ftyp';
+    const isWebm = head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3;
+
+    let validSignature = false;
+    if (ext === '.pdf') validSignature = ascii4 === '%PDF';
+    else if (ext === '.docx' || ext === '.odt' || ext === '.epub') validSignature = isZip;
+    else if (ext === '.doc') validSignature = isOle || isZip;
+    else if (ext === '.rtf') validSignature = ascii5.startsWith('{\\rtf');
+    else if (ext === '.png') validSignature = isPng;
+    else if (ext === '.jpg' || ext === '.jpeg') validSignature = isJpeg;
+    else if (ext === '.webp') validSignature = isWebp;
+    else if (ext === '.mp4' || ext === '.mov' || ext === '.m4v') validSignature = isMp4;
+    else if (ext === '.webm') validSignature = isWebm;
+
+    if (!validSignature) {
+      return {
+        ok: false,
+        error: `The uploaded file "${file.originalname}" does not match a genuine ${ext.toUpperCase()} document signature.`,
+      };
+    }
+    return { ok: true, ext };
+  } catch {
+    return { ok: false, error: 'Failed to inspect uploaded document file.' };
+  }
+}
+
+function getDocumentMimeType(fileName: string, fallbackMime?: string): string {
+  const ext = path.extname(fileName || '').toLowerCase();
+  const map: Record<string, string> = {
+    '.pdf': 'application/pdf',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.doc': 'application/msword',
+    '.odt': 'application/vnd.oasis.opendocument.text',
+    '.rtf': 'application/rtf',
+    '.epub': 'application/epub+zip',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.mov': 'video/quicktime',
+    '.m4v': 'video/x-m4v',
+  };
+  return map[ext] || fallbackMime || 'application/octet-stream';
+}
+
+function sendDiskDocument(
+  res: Response,
+  resolvedPath: string,
+  fileName: string,
+  forceDownload: boolean,
+  storedMime?: string
+) {
+  const safeName = (fileName || 'document.pdf').replace(/["\r\n]/g, '_');
+  const mime = getDocumentMimeType(safeName, storedMime);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Type', mime);
+  if (forceDownload || isActiveMarkupFile(safeName)) {
+    res.download(resolvedPath, safeName);
+    return;
+  }
+  res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+  res.sendFile(resolvedPath);
 }
 
 function canUserAccessResource(user: StoredUser | null, res: ResourceItem): boolean {
@@ -526,6 +689,27 @@ async function startServer() {
     if (req.body?.followPriceUsd !== undefined && isContributorRole(user.role)) {
       user.followPriceUsd = Math.max(0, Number(req.body.followPriceUsd) || 0);
     }
+
+    // Keep denormalized display names in sync system-wide
+    const displayOwnerName = user.institutionName || user.name;
+    for (const r of db.resources) {
+      if (r.ownerId === user.id) r.ownerName = displayOwnerName;
+    }
+    for (const c of db.courses) {
+      if (c.ownerId === user.id) {
+        c.ownerName = displayOwnerName;
+        if (user.institutionName) c.institutionName = user.institutionName;
+      }
+    }
+    for (const s of db.liveSessions) {
+      if (s.hostId === user.id) {
+        s.hostName = user.institutionName ? `${user.name} (${user.institutionName})` : user.name;
+      }
+    }
+    for (const e of db.enrollments) {
+      if (e.learnerId === user.id) e.learnerName = user.name;
+    }
+
     logAudit(user, 'PROFILE_UPDATED', 'USER', user.id, `${user.name} updated profile settings.`);
     persist();
     res.json({ user: toSafeUser(user, user) });
@@ -670,12 +854,20 @@ async function startServer() {
           u.kycStatus === 'VERIFIED' &&
           u.subscriptionStatus === 'ACTIVE'
       )
-      .map((u) => ({
-        ...toSafeUser(u, viewer),
-        resourcesCount: db.resources.filter((r) => r.ownerId === u.id && r.status === 'PUBLISHED')
-          .length,
-        coursesCount: db.courses.filter((c) => c.ownerId === u.id && c.status === 'ACTIVE').length,
-      }));
+      .map((u) => {
+        const safe = toSafeUser(u, viewer);
+        return {
+          ...safe,
+          email: '',
+          followingCreatorIds: [],
+          paidFollowCreatorIds: [],
+          purchasedResourceIds: [],
+          purchasedCourseIds: [],
+          resourcesCount: db.resources.filter((r) => r.ownerId === u.id && r.status === 'PUBLISHED')
+            .length,
+          coursesCount: db.courses.filter((c) => c.ownerId === u.id && c.status === 'ACTIVE').length,
+        };
+      });
 
     const resources = db.resources
       .filter((r) => r.status === 'PUBLISHED')
@@ -734,6 +926,12 @@ async function startServer() {
       return;
     }
 
+    const safePortfolioUrl = portfolioUrl ? sanitizeSafeExternalUrl(portfolioUrl) : undefined;
+    if (portfolioUrl && !safePortfolioUrl) {
+      res.status(400).json({ error: 'Portfolio URL must be a valid http:// or https:// link.' });
+      return;
+    }
+
     const requestItem: AccountRequest = {
       id: `req-${crypto.randomUUID().slice(0, 8)}`,
       fullName,
@@ -746,7 +944,7 @@ async function startServer() {
       educationSystem,
       specialization,
       plannedLevels: plannedLevels || undefined,
-      portfolioUrl: portfolioUrl || undefined,
+      portfolioUrl: safePortfolioUrl,
       statement,
       status: 'PENDING',
       submittedAt: new Date().toISOString(),
@@ -861,6 +1059,7 @@ async function startServer() {
       resources: db.resources.map((r) => ({ ...r, filePath: undefined })),
       academicDocs: enrichedAcademicDocs,
       courses: db.courses,
+      enrollments: db.enrollments,
       liveSessions: db.liveSessions,
       educationLevels: getPlatformGatewayConfig().educationLevels,
       outboxEmails: db.outboxEmails,
@@ -1376,6 +1575,78 @@ async function startServer() {
     res.json({ deletedId: kyc.id });
   });
 
+  app.patch('/api/admin/requests/:id', requireAuth, requireRole('MASTER_ADMIN'), (req: AuthedRequest, res) => {
+    const admin = req.authUser!;
+    const reqItem = db.accountRequests.find((r) => r.id === req.params.id);
+    if (!reqItem) {
+      res.status(404).json({ error: 'Account request not found.' });
+      return;
+    }
+    if (req.body?.fullName !== undefined) reqItem.fullName = String(req.body.fullName).trim() || reqItem.fullName;
+    if (req.body?.email !== undefined) reqItem.email = String(req.body.email).trim().toLowerCase() || reqItem.email;
+    if (req.body?.phone !== undefined) reqItem.phone = String(req.body.phone).trim() || undefined;
+    if (req.body?.accountCategory !== undefined) {
+      reqItem.accountCategory = String(req.body.accountCategory) as AccountCategory;
+    }
+    if (req.body?.organizationName !== undefined) {
+      reqItem.organizationName = String(req.body.organizationName).trim() || undefined;
+    }
+    if (req.body?.country !== undefined) reqItem.country = String(req.body.country).trim() || reqItem.country;
+    if (req.body?.educationSystem !== undefined) {
+      reqItem.educationSystem = String(req.body.educationSystem).trim() || reqItem.educationSystem;
+    }
+    if (req.body?.specialization !== undefined) {
+      reqItem.specialization = String(req.body.specialization).trim() || reqItem.specialization;
+    }
+    if (req.body?.statement !== undefined) reqItem.statement = String(req.body.statement).trim() || reqItem.statement;
+    logAudit(admin, 'ACCOUNT_REQUEST_UPDATED', 'REQUEST', reqItem.id, `Updated application for ${reqItem.fullName}.`);
+    persist();
+    res.json({ request: reqItem });
+  });
+
+  app.post('/api/admin/enrollments', requireAuth, requireRole('MASTER_ADMIN'), (req: AuthedRequest, res) => {
+    const admin = req.authUser!;
+    const courseId = String(req.body?.courseId || '');
+    const learnerId = String(req.body?.learnerId || '');
+    const academicStatus = (req.body?.academicStatus || 'APPROVED') as EnrollmentRecord['academicStatus'];
+    const course = db.courses.find((c) => c.id === courseId);
+    const learner = db.users.find((u) => u.id === learnerId);
+    if (!course || !learner) {
+      res.status(404).json({ error: 'Target course and learner account are required.' });
+      return;
+    }
+    const existing = db.enrollments.find((e) => e.courseId === course.id && e.learnerId === learner.id);
+    if (existing) {
+      res.status(409).json({ error: 'Learner already has an enrollment record in this course.' });
+      return;
+    }
+    const enrollment: EnrollmentRecord = {
+      id: `enr-${crypto.randomUUID().slice(0, 8)}`,
+      courseId: course.id,
+      courseTitle: course.title,
+      learnerId: learner.id,
+      learnerName: learner.name,
+      learnerDeclaredLevel: learner.educationLevel || 'Undergraduate',
+      ownerId: course.ownerId,
+      institutionId: course.institutionId,
+      verifierRoleRequired: course.institutionId ? 'INSTITUTION_ADMIN' : 'SOLO_EDUCATOR',
+      academicStatus,
+      academicNote: String(req.body?.academicNote || 'Enrolled via Master Admin console.').trim(),
+      progressPercent: 0,
+      completedResourceIds: [],
+      attendanceMinutes: 0,
+      requestedAt: new Date().toISOString(),
+      verifiedAt: academicStatus === 'APPROVED' ? new Date().toISOString() : undefined,
+    };
+    db.enrollments.unshift(enrollment);
+    if (academicStatus === 'APPROVED' && !course.enrolledLearnerIds.includes(learner.id)) {
+      course.enrolledLearnerIds.push(learner.id);
+    }
+    logAudit(admin, 'ENROLLMENT_CREATED', 'ENROLLMENT', enrollment.id, `Master Admin enrolled ${learner.name} in ${course.title}.`);
+    persist();
+    res.status(201).json({ enrollment });
+  });
+
   // ---------------- CONTRIBUTOR & INSTITUTION STUDIO ----------------
   app.post(
     '/api/contributor/kyc',
@@ -1388,15 +1659,42 @@ async function startServer() {
     (req: AuthedRequest, res) => {
       const user = req.authUser!;
       const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+      const idFile = files?.idDocument?.[0];
+      const credFile = files?.credentialDocument?.[0];
+
+      const cleanupFiles = () => {
+        if (idFile) safeDeleteUploadedFile(idFile.filename);
+        if (credFile) safeDeleteUploadedFile(credFile.filename);
+      };
+
+      if (!idFile || !credFile) {
+        cleanupFiles();
+        res.status(400).json({
+          error:
+            'Both a National ID / Passport document and a Teaching Credential document file are required (PDF, Word DOCX/DOC, or scan image).',
+        });
+        return;
+      }
+
+      const idCheck = verifyUploadedFileSignature(idFile, ID_SCAN_EXTS);
+      if (!idCheck.ok) {
+        cleanupFiles();
+        res.status(400).json({ error: `ID Document error: ${idCheck.error}` });
+        return;
+      }
+      const credCheck = verifyUploadedFileSignature(credFile, CREDENTIAL_DOC_EXTS);
+      if (!credCheck.ok) {
+        cleanupFiles();
+        res.status(400).json({ error: `Credential Document error: ${credCheck.error}` });
+        return;
+      }
+
       const documentType = String(req.body?.documentType || 'NATIONAL_ID') as KycSubmission['documentType'];
       const rawNumber = String(req.body?.documentNumber || '').trim();
       const masked =
         rawNumber.length > 4
           ? `${rawNumber.slice(0, 2)}****${rawNumber.slice(-4)}`
           : '****VERIFIED';
-
-      const idFile = files?.idDocument?.[0];
-      const credFile = files?.credentialDocument?.[0];
 
       user.bio = String(req.body?.bio || user.bio).trim();
       user.specialization = String(req.body?.specialization || user.specialization).trim();
@@ -1415,16 +1713,19 @@ async function startServer() {
         accountCategory: user.accountCategory,
         documentType,
         documentNumberMasked: masked,
-        idFileName: idFile?.originalname || String(req.body?.idFileNameFallback || 'identity_document.pdf'),
-        idFilePath: idFile?.filename || '',
-        credentialFileName:
-          credFile?.originalname || String(req.body?.credentialFileNameFallback || 'teaching_credential.pdf'),
-        credentialFilePath: credFile?.filename || '',
+        idFileName: idFile.originalname,
+        idFilePath: idFile.filename,
+        credentialFileName: credFile.originalname,
+        credentialFilePath: credFile.filename,
         submittedAt: new Date().toISOString(),
         status: 'PENDING',
       };
 
       // Replace previous pending submissions for same user
+      for (const old of db.kycSubmissions.filter((k) => k.userId === user.id && k.status === 'PENDING')) {
+        safeDeleteUploadedFile(old.idFilePath);
+        safeDeleteUploadedFile(old.credentialFilePath);
+      }
       db.kycSubmissions = db.kycSubmissions.filter(
         (k) => !(k.userId === user.id && k.status === 'PENDING')
       );
@@ -1510,6 +1811,37 @@ async function startServer() {
 
       const myTransactions = db.ledger.filter((t) => t.sellerId === user.id);
 
+      // Build strictly sanitized messaging recipients (students enrolled/following + institution colleagues)
+      const recipientMap = new Map<string, { id: string; name: string; label: string }>();
+      for (const s of staff) {
+        recipientMap.set(s.id, {
+          id: s.id,
+          name: s.name,
+          label: `${s.role.replace('_', ' ')} · ${s.specialization}`,
+        });
+      }
+      for (const e of myEnrollments) {
+        if (!recipientMap.has(e.learnerId)) {
+          recipientMap.set(e.learnerId, {
+            id: e.learnerId,
+            name: e.learnerName,
+            label: `Student · ${e.courseTitle}`,
+          });
+        }
+      }
+      for (const fid of user.followerIds) {
+        if (!recipientMap.has(fid)) {
+          const follower = db.users.find((u) => u.id === fid);
+          if (follower) {
+            recipientMap.set(follower.id, {
+              id: follower.id,
+              name: follower.name,
+              label: 'Follower',
+            });
+          }
+        }
+      }
+
       res.json({
         resources: myResources,
         courses: myCourses,
@@ -1518,6 +1850,7 @@ async function startServer() {
         staff,
         transactions: myTransactions,
         myKycSubmissions: db.kycSubmissions.filter((k) => k.userId === user.id),
+        messageRecipients: Array.from(recipientMap.values()),
         educationLevels: getPlatformGatewayConfig().educationLevels,
       });
     }
@@ -1530,7 +1863,9 @@ async function startServer() {
     upload.single('file'),
     (req: AuthedRequest, res) => {
       const user = req.authUser!;
+      const uploaded = req.file;
       if (user.role !== 'MASTER_ADMIN' && (user.kycStatus !== 'VERIFIED' || user.subscriptionStatus !== 'ACTIVE')) {
+        if (uploaded) safeDeleteUploadedFile(uploaded.filename);
         res.status(403).json({
           error:
             'Publishing is locked until your identity is verified and your subscription is ACTIVE.',
@@ -1552,12 +1887,28 @@ async function startServer() {
       ).trim();
 
       if (!title || !description) {
+        if (uploaded) safeDeleteUploadedFile(uploaded.filename);
         res.status(400).json({ error: 'Title and description are required.' });
         return;
       }
 
-      const uploaded = req.file;
-      const sizeKb = uploaded ? Math.max(1, Math.round(uploaded.size / 1024)) : 240;
+      if (!uploaded) {
+        res.status(400).json({
+          error:
+            'A real document or media file is required. Text-only entries without a file are not accepted.',
+        });
+        return;
+      }
+
+      const allowed = allowedExtensionsForResourceType(type);
+      const check = verifyUploadedFileSignature(uploaded, allowed);
+      if (!check.ok) {
+        safeDeleteUploadedFile(uploaded.filename);
+        res.status(400).json({ error: check.error });
+        return;
+      }
+
+      const sizeKb = Math.max(1, Math.round(uploaded.size / 1024));
       const fileSizeLabel =
         sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
 
@@ -1577,10 +1928,10 @@ async function startServer() {
         accessTier,
         priceUsd,
         downloadable,
-        fileName: uploaded?.originalname || `${title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.${type.toLowerCase()}`,
+        fileName: uploaded.originalname,
         fileSizeLabel,
-        filePath: uploaded?.filename,
-        mimeType: uploaded?.mimetype,
+        filePath: uploaded.filename,
+        mimeType: getDocumentMimeType(uploaded.originalname, uploaded.mimetype),
         previewSummary,
         downloadsCount: 0,
         viewsCount: 0,
@@ -1603,6 +1954,7 @@ async function startServer() {
       const actor = req.authUser!;
       const item = db.resources.find((r) => r.id === req.params.id);
       if (!item) {
+        if (req.file) safeDeleteUploadedFile(req.file.filename);
         res.status(404).json({ error: 'Resource not found.' });
         return;
       }
@@ -1611,17 +1963,29 @@ async function startServer() {
         item.ownerId === actor.id ||
         (actor.institutionId && item.institutionId === actor.institutionId);
       if (!isAuthorized) {
+        if (req.file) safeDeleteUploadedFile(req.file.filename);
         res.status(403).json({ error: 'You do not have permission to edit this resource.' });
         return;
       }
       if (actor.role !== 'MASTER_ADMIN' && (actor.kycStatus !== 'VERIFIED' || actor.subscriptionStatus !== 'ACTIVE')) {
+        if (req.file) safeDeleteUploadedFile(req.file.filename);
         res.status(403).json({ error: 'Contributor account must be verified and active to modify materials.' });
         return;
       }
 
+      const nextType = (req.body?.type !== undefined ? String(req.body.type) : item.type) as ResourceType;
+      if (req.file) {
+        const check = verifyUploadedFileSignature(req.file, allowedExtensionsForResourceType(nextType));
+        if (!check.ok) {
+          safeDeleteUploadedFile(req.file.filename);
+          res.status(400).json({ error: check.error });
+          return;
+        }
+      }
+
       if (req.body?.title !== undefined) item.title = String(req.body.title).trim() || item.title;
       if (req.body?.description !== undefined) item.description = String(req.body.description).trim() || item.description;
-      if (req.body?.type !== undefined) item.type = String(req.body.type) as ResourceType;
+      if (req.body?.type !== undefined) item.type = nextType;
       if (req.body?.subject !== undefined) item.subject = String(req.body.subject).trim() || item.subject;
       if (req.body?.educationLevel !== undefined) item.educationLevel = String(req.body.educationLevel).trim();
       if (req.body?.accessTier !== undefined) item.accessTier = String(req.body.accessTier) as AccessTier;
@@ -1643,7 +2007,7 @@ async function startServer() {
         item.fileName = req.file.originalname;
         item.fileSizeLabel = sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
         item.filePath = req.file.filename;
-        item.mimeType = req.file.mimetype;
+        item.mimeType = getDocumentMimeType(req.file.originalname, req.file.mimetype);
       }
 
       logAudit(actor, 'RESOURCE_UPDATED', 'RESOURCE', item.id, `${actor.name} updated "${item.title}".`);
@@ -1706,7 +2070,9 @@ async function startServer() {
       const educationSystem = String(req.body?.educationSystem || user.educationSystem || 'UNEB / NCHE Uganda').trim();
       const accessTier = String(req.body?.accessTier || 'ENROLLED_ONLY') as AccessTier;
       const priceUsd = accessTier === 'PAID_SINGLE' ? Math.max(1, Number(req.body?.priceUsd || 25)) : 0;
-      const resourceIds = Array.isArray(req.body?.resourceIds) ? req.body.resourceIds.map(String) : [];
+      const resourceIds = Array.isArray(req.body?.resourceIds)
+        ? filterAttachableResourceIds(user, req.body.resourceIds.map(String))
+        : [];
       const requiresAcademicVerification = req.body?.requiresAcademicVerification !== false;
       const assignedInstructorId = req.body?.assignedInstructorId
         ? String(req.body.assignedInstructorId)
@@ -1792,7 +2158,7 @@ async function startServer() {
         course.assignedInstructorId = req.body.assignedInstructorId ? String(req.body.assignedInstructorId) : undefined;
       }
       if (Array.isArray(req.body?.resourceIds)) {
-        course.resourceIds = req.body.resourceIds.map(String);
+        course.resourceIds = filterAttachableResourceIds(actor, req.body.resourceIds.map(String));
       }
       if (req.body?.status !== undefined && (req.body.status === 'ACTIVE' || req.body.status === 'PAUSED')) {
         course.status = req.body.status;
@@ -2169,7 +2535,21 @@ async function startServer() {
       const educationLevel = String(req.body?.educationLevel || user.educationLevel || 'Undergraduate').trim();
       const institutionIssued = String(req.body?.institutionIssued || '').trim();
       if (!title || !institutionIssued) {
+        if (req.file) safeDeleteUploadedFile(req.file.filename);
         res.status(400).json({ error: 'Document title and issuing institution are required.' });
+        return;
+      }
+      if (!req.file) {
+        res.status(400).json({
+          error:
+            'Please upload a genuine academic document file (PDF, Word DOCX/DOC, or certificate scan image). Plain text entries are not accepted.',
+        });
+        return;
+      }
+      const check = verifyUploadedFileSignature(req.file, CREDENTIAL_DOC_EXTS);
+      if (!check.ok) {
+        safeDeleteUploadedFile(req.file.filename);
+        res.status(400).json({ error: check.error });
         return;
       }
 
@@ -2180,8 +2560,8 @@ async function startServer() {
         title,
         educationLevel,
         institutionIssued,
-        fileName: req.file?.originalname || `${title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.pdf`,
-        filePath: req.file?.filename,
+        fileName: req.file.originalname,
+        filePath: req.file.filename,
         uploadedAt: new Date().toISOString(),
       };
       db.learnerAcademicDocs.unshift(docItem);
@@ -2201,12 +2581,22 @@ async function startServer() {
       const user = req.authUser!;
       const doc = db.learnerAcademicDocs.find((d) => d.id === req.params.id);
       if (!doc) {
+        if (req.file) safeDeleteUploadedFile(req.file.filename);
         res.status(404).json({ error: 'Academic document not found.' });
         return;
       }
       if (user.role !== 'MASTER_ADMIN' && doc.learnerId !== user.id) {
+        if (req.file) safeDeleteUploadedFile(req.file.filename);
         res.status(403).json({ error: 'You do not have permission to edit this document.' });
         return;
+      }
+      if (req.file) {
+        const check = verifyUploadedFileSignature(req.file, CREDENTIAL_DOC_EXTS);
+        if (!check.ok) {
+          safeDeleteUploadedFile(req.file.filename);
+          res.status(400).json({ error: check.error });
+          return;
+        }
       }
       if (req.body?.title !== undefined) doc.title = String(req.body.title).trim() || doc.title;
       if (req.body?.educationLevel !== undefined) {
@@ -2298,21 +2688,23 @@ async function startServer() {
     const targetId = String(req.body?.targetId || '');
 
     if (kind === 'PLATFORM_PASS') {
-      user.platformPassActive = true;
-      user.subscriptionPlan = 'AKADEMI_PASS';
-      user.subscriptionStatus = 'ACTIVE';
-      db.ledger.unshift({
-        id: `tx-${crypto.randomUUID().slice(0, 8)}`,
-        buyerId: user.id,
-        buyerName: user.name,
-        itemType: 'PLATFORM_PASS',
-        itemTitle: 'Akademi Pass — Monthly Resource Access',
-        grossUsd: 15,
-        platformFeeUsd: 15,
-        creatorNetUsd: 0,
-        timestamp: new Date().toISOString(),
-      });
-      persist();
+      if (!user.platformPassActive) {
+        user.platformPassActive = true;
+        user.subscriptionPlan = 'AKADEMI_PASS';
+        user.subscriptionStatus = 'ACTIVE';
+        db.ledger.unshift({
+          id: `tx-${crypto.randomUUID().slice(0, 8)}`,
+          buyerId: user.id,
+          buyerName: user.name,
+          itemType: 'PLATFORM_PASS',
+          itemTitle: 'Akademi Pass — Monthly Resource Access',
+          grossUsd: 15,
+          platformFeeUsd: 15,
+          creatorNetUsd: 0,
+          timestamp: new Date().toISOString(),
+        });
+        persist();
+      }
       res.json({ user: toSafeUser(user, user) });
       return;
     }
@@ -2403,6 +2795,16 @@ async function startServer() {
       (e) => e.courseId === course.id && e.learnerId === user.id
     );
     if (existing) {
+      if (existing.academicStatus === 'REJECTED') {
+        existing.academicStatus = course.requiresAcademicVerification ? 'PENDING' : 'APPROVED';
+        existing.requestedAt = new Date().toISOString();
+        existing.verifiedAt = existing.academicStatus === 'APPROVED' ? new Date().toISOString() : undefined;
+        existing.academicNote = 'Learner resubmitted prerequisite verification request.';
+        if (existing.academicStatus === 'APPROVED' && !course.enrolledLearnerIds.includes(user.id)) {
+          course.enrolledLearnerIds.push(user.id);
+        }
+        persist();
+      }
       res.json({ enrollment: existing });
       return;
     }
@@ -2489,6 +2891,10 @@ async function startServer() {
       res.status(404).json({ error: 'Approved enrollment not found.' });
       return;
     }
+    if (!course.resourceIds.includes(resourceId)) {
+      res.status(400).json({ error: 'Resource is not part of this course syllabus.' });
+      return;
+    }
     if (completed) {
       if (!enrollment.completedResourceIds.includes(resourceId)) {
         enrollment.completedResourceIds.push(resourceId);
@@ -2505,7 +2911,7 @@ async function startServer() {
     res.json({ enrollment });
   });
 
-  // ---------------- SECURE FILE DELIVERY ----------------
+  // ---------------- SECURE FILE DELIVERY (DOCUMENTS ONLY — NEVER PLAIN TEXT) ----------------
   app.get('/api/files/resource/:id', requireAuth, (req: AuthedRequest, res) => {
     const user = req.authUser!;
     const item = db.resources.find((r) => r.id === req.params.id);
@@ -2518,7 +2924,8 @@ async function startServer() {
       return;
     }
     item.viewsCount += 1;
-    if (req.query.download === '1' && item.downloadable) {
+    const forceDownload = req.query.download === '1' && item.downloadable;
+    if (forceDownload) {
       item.downloadsCount += 1;
     }
     persist();
@@ -2529,38 +2936,47 @@ async function startServer() {
         res.status(404).json({ error: 'File payload missing from vault.' });
         return;
       }
-      if (req.query.download === '1' && item.downloadable) {
-        res.download(resolved, item.fileName);
-        return;
-      }
-      res.sendFile(resolved);
+      sendDiskDocument(res, resolved, item.fileName, forceDownload, item.mimeType);
       return;
     }
 
-    // Serve clean formatted study document for seeded materials
-    const content = [
-      `AKADEMI BY NOVIC TECHNOLOGIES — VERIFIED RESOURCE`,
-      `==================================================`,
-      `Title: ${item.title}`,
-      `Author / Institution: ${item.ownerName}`,
-      `Subject: ${item.subject} | Level: ${item.educationLevel}`,
-      `Type: ${item.type} | File: ${item.fileName}`,
-      ``,
-      `Summary & Study Outline:`,
-      item.previewSummary,
-      ``,
-      `Description:`,
-      item.description,
-    ].join('\n');
+    // Serve a real rendered PDF document for cataloged/seeded resources
+    const pdfBuf = buildPdfDocumentBuffer({
+      title: item.title,
+      subtitle: `${item.subject} | ${item.educationLevel}`,
+      documentCode: item.id.toUpperCase(),
+      metadata: [
+        { label: 'Author / Institution', value: item.ownerName },
+        { label: 'Curriculum System', value: item.educationSystem || 'Pan-African Curriculum' },
+        { label: 'Resource Type', value: `${item.type} (${item.fileSizeLabel})` },
+        { label: 'Original Document', value: item.fileName },
+        { label: 'Published Date', value: new Date(item.createdAt).toLocaleDateString() },
+      ],
+      sections: [
+        {
+          heading: '1. Executive Study Outline',
+          body: item.previewSummary || item.description,
+        },
+        {
+          heading: '2. Detailed Academic Notes & Scope',
+          body: item.description,
+        },
+        {
+          heading: '3. Verification & Academic Integrity Notice',
+          body: `This resource was cataloged on Akademi under contributor "${item.ownerName}". Access tier: ${item.accessTier}. Downloadable permission: ${item.downloadable ? 'Permitted for enrolled/entitled learners' : 'In-viewer reading only'}.`,
+        },
+      ],
+    });
 
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    if (req.query.download === '1' && item.downloadable) {
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${item.fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}.txt"`
-      );
-    }
-    res.send(content);
+    const basePdfName = item.fileName.replace(/\.[^.]+$/, '') || 'akademi_resource';
+    const safePdfName = `${basePdfName.replace(/[^a-zA-Z0-9._-]/g, '_')}.pdf`;
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `${forceDownload ? 'attachment' : 'inline'}; filename="${safePdfName}"`
+    );
+    res.send(pdfBuf);
   });
 
   app.get('/api/files/kyc/:id/:kind', requireAuth, (req: AuthedRequest, res) => {
@@ -2580,38 +2996,61 @@ async function startServer() {
     }
     const relPath = req.params.kind === 'credential' ? kyc.credentialFilePath : kyc.idFilePath;
     const fileName = req.params.kind === 'credential' ? kyc.credentialFileName : kyc.idFileName;
+    const forceDownload = req.query.download === '1';
+
     if (relPath) {
       const resolved = path.resolve(UPLOAD_DIR, relPath);
       if (resolved.startsWith(UPLOAD_DIR + path.sep) && fs.existsSync(resolved)) {
-        if (req.query.download === '1') {
-          res.download(resolved, fileName);
-          return;
-        }
-        res.sendFile(resolved);
+        sendDiskDocument(res, resolved, fileName, forceDownload);
         return;
       }
     }
+
     const applicant = db.users.find((u) => u.id === kyc.userId);
-    res.type('text/plain').send(
-      [
-        `AKADEMI COMPLIANCE VERIFICATION RECORD (${kyc.id})`,
-        `==================================================`,
-        `Applicant: ${kyc.userName} (${kyc.userEmail})`,
-        `Role / Category: ${kyc.role} · ${kyc.accountCategory || 'N/A'}`,
-        `Country / System: ${applicant?.country || 'N/A'} · ${applicant?.educationSystem || 'N/A'}`,
-        `Specialization: ${applicant?.specialization || 'N/A'}`,
-        `Phone: ${applicant?.phone || 'N/A'}`,
-        `Address: ${applicant?.homeAddress || 'N/A'}`,
-        `Document Type: ${kyc.documentType}`,
-        `Document Reference: ${applicant?.nationalIdNumber || kyc.documentNumberMasked}`,
-        `Submitted Filename: ${fileName}`,
-        `Submitted At: ${new Date(kyc.submittedAt).toLocaleString()}`,
-        `Status: ${kyc.status}`,
-        kyc.reviewNotes ? `Review Notes: ${kyc.reviewNotes}` : '',
-      ]
-        .filter(Boolean)
-        .join('\n')
+    const pdfBuf = buildPdfDocumentBuffer({
+      title:
+        req.params.kind === 'credential'
+          ? `Teaching Credential Dossier — ${kyc.userName}`
+          : `Identity Verification Dossier — ${kyc.userName}`,
+      subtitle: `Compliance Record ${kyc.id} · Status: ${kyc.status}`,
+      documentCode: kyc.id.toUpperCase(),
+      metadata: [
+        { label: 'Applicant', value: `${kyc.userName} (${kyc.userEmail})` },
+        { label: 'Role / Category', value: `${kyc.role} | ${kyc.accountCategory || 'N/A'}` },
+        {
+          label: 'Country / System',
+          value: `${applicant?.country || 'N/A'} | ${applicant?.educationSystem || 'N/A'}`,
+        },
+        { label: 'Specialization', value: applicant?.specialization || 'N/A' },
+        { label: 'Document Type', value: kyc.documentType },
+        {
+          label: 'Document Reference',
+          value: applicant?.nationalIdNumber || kyc.documentNumberMasked,
+        },
+        { label: 'Submitted File', value: fileName },
+        { label: 'Submitted At', value: new Date(kyc.submittedAt).toLocaleString() },
+      ],
+      sections: [
+        {
+          heading: '1. Confidential Compliance Attestation',
+          body: `Phone: ${applicant?.phone || 'Not provided'} | Address: ${
+            applicant?.homeAddress || 'Not provided'
+          }. This compliance dossier is visible strictly to the document owner and Master Admin governance officers.`,
+        },
+        ...(kyc.reviewNotes
+          ? [{ heading: '2. Master Admin Review Notes', body: kyc.reviewNotes }]
+          : []),
+      ],
+    });
+
+    const safePdfName = `${(fileName.replace(/\.[^.]+$/, '') || 'kyc_document').replace(/[^a-zA-Z0-9._-]/g, '_')}.pdf`;
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `${forceDownload ? 'attachment' : 'inline'}; filename="${safePdfName}"`
     );
+    res.send(pdfBuf);
   });
 
   app.get('/api/files/academic-doc/:id', requireAuth, (req: AuthedRequest, res) => {
@@ -2646,31 +3085,48 @@ async function startServer() {
       persist();
     }
 
+    const forceDownload = req.query.download === '1';
     if (doc.filePath) {
       const resolved = path.resolve(UPLOAD_DIR, doc.filePath);
       if (resolved.startsWith(UPLOAD_DIR + path.sep) && fs.existsSync(resolved)) {
-        if (req.query.download === '1') {
-          res.download(resolved, doc.fileName);
-          return;
-        }
-        res.sendFile(resolved);
+        sendDiskDocument(res, resolved, doc.fileName, forceDownload);
         return;
       }
     }
 
     const learner = db.users.find((u) => u.id === doc.learnerId);
-    res.type('text/plain').send(
-      [
-        `AKADEMI LEARNER ACADEMIC CREDENTIAL (${doc.id})`,
-        `==================================================`,
-        `Document Title: ${doc.title}`,
-        `Learner: ${learner?.name || 'Learner'}${user.role === 'MASTER_ADMIN' && learner?.email ? ` (${learner.email})` : ''}`,
-        `Education Level: ${doc.educationLevel}`,
-        `Issuing Institution / Board: ${doc.institutionIssued}`,
-        `Filename: ${doc.fileName}`,
-        `Uploaded At: ${new Date(doc.uploadedAt).toLocaleString()}`,
-      ].join('\n')
+    const pdfBuf = buildPdfDocumentBuffer({
+      title: doc.title,
+      subtitle: `Learner Academic Credential · ${doc.educationLevel}`,
+      documentCode: doc.id.toUpperCase(),
+      metadata: [
+        {
+          label: 'Learner',
+          value: `${learner?.name || 'Learner'}${
+            user.role === 'MASTER_ADMIN' && learner?.email ? ` (${learner.email})` : ''
+          }`,
+        },
+        { label: 'Education Level', value: doc.educationLevel },
+        { label: 'Issuing Authority', value: doc.institutionIssued },
+        { label: 'Submitted File', value: doc.fileName },
+        { label: 'Uploaded At', value: new Date(doc.uploadedAt).toLocaleString() },
+      ],
+      sections: [
+        {
+          heading: '1. Academic Prerequisite Record',
+          body: `This verified academic credential ("${doc.title}") was issued by ${doc.institutionIssued} at the ${doc.educationLevel} tier and submitted into the learner's Academic Vault for prerequisite screening.`,
+        },
+      ],
+    });
+
+    const safePdfName = `${(doc.fileName.replace(/\.[^.]+$/, '') || 'academic_credential').replace(/[^a-zA-Z0-9._-]/g, '_')}.pdf`;
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `${forceDownload ? 'attachment' : 'inline'}; filename="${safePdfName}"`
     );
+    res.send(pdfBuf);
   });
 
   // ---------------- LIVE SESSIONS ----------------
@@ -2692,13 +3148,17 @@ async function startServer() {
         res.status(404).json({ error: 'Target course not found.' });
         return;
       }
+      if (!canManageCourse(user, course)) {
+        res.status(403).json({ error: 'You do not have permission to host a session for this course.' });
+        return;
+      }
       const title = String(req.body?.title || '').trim();
       const topicSummary = String(req.body?.topicSummary || '').trim();
       const scheduledAt = String(req.body?.scheduledAt || new Date().toISOString());
       const durationMinutes = Math.max(15, Number(req.body?.durationMinutes || 60));
       const accessRule = String(req.body?.accessRule || 'ENROLLED_ONLY') as LiveSession['accessRule'];
       const pinnedResourceIds = Array.isArray(req.body?.pinnedResourceIds)
-        ? req.body.pinnedResourceIds.map(String)
+        ? filterAttachableResourceIds(user, req.body.pinnedResourceIds.map(String))
         : [];
 
       if (!title) {
@@ -2765,7 +3225,10 @@ async function startServer() {
         broadcastToSession(session.id, 'session:status', { status: session.status });
       }
       if (Array.isArray(req.body?.pinnedResourceIds)) {
-        session.pinnedResourceIds = req.body.pinnedResourceIds.map(String);
+        session.pinnedResourceIds = filterAttachableResourceIds(
+          user,
+          req.body.pinnedResourceIds.map(String)
+        );
       }
       logAudit(user, 'SESSION_UPDATED', 'SESSION', session.id, `${user.name} updated session "${session.title}".`);
       persist();
@@ -2868,8 +3331,13 @@ async function startServer() {
       if (pu) participantDirectory[pid] = { id: pu.id, name: pu.name, role: pu.role };
     }
 
+    const isHostViewer =
+      user.role === 'MASTER_ADMIN' ||
+      user.id === session.hostId ||
+      Boolean(user.institutionId && session.institutionId === user.institutionId);
+
     res.json({
-      session,
+      session: isHostViewer ? session : { ...session, attendanceLog: {} },
       pinnedResources,
       participantDirectory,
     });
@@ -3190,6 +3658,10 @@ async function startServer() {
       ws.close(4001, 'User not found');
       return;
     }
+    if (user.mustChangePassword) {
+      ws.close(4003, 'Password change required');
+      return;
+    }
 
     const client: ConnectedSocket = { ws, userId: user.id, role: user.role };
     connectedSockets.add(client);
@@ -3335,11 +3807,16 @@ async function startServer() {
         } else if (action === 'PIN_RESOURCE') {
           const resourceId = String(payload.resourceId || '');
           const resObj = db.resources.find((r) => r.id === resourceId);
-          if (resObj && !session.pinnedResourceIds.includes(resourceId)) {
+          if (resObj && canAttachResource(freshUser, resObj) && !session.pinnedResourceIds.includes(resourceId)) {
             session.pinnedResourceIds.push(resourceId);
           }
           const course = db.courses.find((c) => c.id === session.courseId);
-          if (course && resourceId && !course.resourceIds.includes(resourceId)) {
+          if (
+            course &&
+            resObj &&
+            canAttachResource(freshUser, resObj) &&
+            !course.resourceIds.includes(resourceId)
+          ) {
             course.resourceIds.push(resourceId);
           }
           const pinnedResources = db.resources

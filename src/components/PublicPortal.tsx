@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { LanguageSelector, useI18n } from '../lib/i18n';
+import { ThemeToggle } from '../lib/theme';
 import type {
   AccountCategory,
   PublicGatewayInfo,
@@ -229,62 +230,60 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
   const institutions = gateway?.featuredCreators.filter((c) => c.isInstitution) || [];
 
   const fieldCls =
-    'min-h-[46px] w-full rounded-lg border border-[#C8BFA8] bg-[#EFECE3] px-3.5 py-2.5 text-base text-[#0C1B2E] placeholder:text-[#6B665D] focus:border-[#0C1B2E] focus:outline-none';
+    'min-h-[46px] w-full rounded-lg border border-[var(--ak-border)] bg-[var(--ak-recessed)] px-3.5 py-2.5 text-base text-[var(--ak-ink)] placeholder:text-[var(--ak-muted)] focus:border-[#C9642E] focus:outline-none';
 
   return (
-    <div dir={dir} className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#EFECE3] text-[#0C1B2E]">
-      {/* 1. Top Navigation Bar — clean, structured, persistent language selector across all sizes */}
-      <header className="sticky top-0 z-40 border-b border-[#D4CCB9] bg-[#F6F3EB]/95 backdrop-blur-xs">
+    <div dir={dir} className="min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--ak-canvas)] text-[var(--ak-ink)]">
+      {/* 1. Top Navigation Bar */}
+      <header className="sticky top-0 z-40 border-b border-[var(--ak-border)] bg-[var(--ak-surface)]/95 backdrop-blur-xs">
         <div className="african-weave-rule" />
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-2.5 px-3 py-3 sm:gap-4 sm:px-6">
-          {/* Zone 1: Software Brand Logo + Wordmark */}
           <a href="#top" className="min-w-0 shrink-0">
             <BrandMark brandName={brandName} logoUrl={logoUrl} />
           </a>
 
-          {/* Zone 2: Clean single-line links (Desktop) */}
-          <nav className="hidden items-center gap-6 text-base font-medium text-[#2D3D50] lg:flex">
+          <nav className="hidden items-center gap-6 text-base font-medium text-[var(--ak-ink-2)] lg:flex">
             <a
               href="#resources"
-              className="hover:text-[#0C1B2E] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
+              className="hover:text-[var(--ak-ink)] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
             >
               {t.navResources}
             </a>
             <a
               href="#how-it-works"
-              className="hover:text-[#0C1B2E] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
+              className="hover:text-[var(--ak-ink)] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
             >
               {t.navHowItWorks}
             </a>
             <a
               href="#pricing"
-              className="hover:text-[#0C1B2E] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
+              className="hover:text-[var(--ak-ink)] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
             >
               {t.navPricing}
             </a>
             <a
               href="#live"
-              className="hover:text-[#0C1B2E] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
+              className="hover:text-[var(--ak-ink)] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
             >
               {t.navLive}
             </a>
             <a
               href="#help"
-              className="hover:text-[#0C1B2E] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
+              className="hover:text-[var(--ak-ink)] hover:underline underline-offset-4 whitespace-nowrap shrink-0"
             >
               {t.navHelp}
             </a>
           </nav>
 
-          {/* Zone 3: Persistent Language Selector + Auth Controls */}
           <div className="flex items-center gap-2 shrink-0">
+            <ThemeToggle compact />
             <LanguageSelector compact />
 
             {currentUser ? (
               <button
                 type="button"
                 onClick={onEnterDashboard}
-                className="hidden min-h-[42px] rounded-lg bg-[#0C1B2E] px-4 py-2 text-sm font-semibold text-[#F6F3EB] hover:bg-[#1A2F4A] sm:inline-flex sm:items-center whitespace-nowrap"
+                className="hidden min-h-[42px] rounded-lg bg-[#C9642E] px-4 py-2 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] sm:inline-flex sm:items-center whitespace-nowrap"
               >
                 {t.openDashboard}
               </button>
@@ -293,14 +292,14 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenAuth('LOGIN')}
-                  className="min-h-[42px] rounded-lg border border-[#C8BFA8] bg-[#EFECE3] px-3.5 py-2 text-sm font-semibold text-[#0C1B2E] hover:bg-[#E6E0D3] whitespace-nowrap"
+                  className="min-h-[42px] rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-3.5 py-2 text-sm font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)] whitespace-nowrap"
                 >
                   {t.signIn}
                 </button>
                 <button
                   type="button"
                   onClick={() => onOpenAuth('REGISTER_LEARNER')}
-                  className="min-h-[42px] rounded-lg bg-[#A44A1C] px-3.5 py-2 text-sm font-semibold text-[#F6F3EB] hover:bg-[#8A3B14] whitespace-nowrap"
+                  className="min-h-[42px] rounded-lg bg-[#C9642E] px-3.5 py-2 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] whitespace-nowrap"
                 >
                   {t.signUpFree}
                 </button>
@@ -311,7 +310,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               type="button"
               onClick={() => setMobileMenuOpen((v) => !v)}
               aria-label="Toggle navigation drawer"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#C8BFA8] bg-[#EFECE3] text-[#0C1B2E] lg:hidden"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-ink)] lg:hidden"
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
@@ -320,9 +319,9 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
         {/* Responsive Drawer for Tablet & Mobile */}
         {mobileMenuOpen && (
-          <div className="border-t border-[#D4CCB9] bg-[#F6F3EB] px-4 py-4 lg:hidden">
+          <div className="border-t border-[var(--ak-border)] bg-[var(--ak-surface)] px-4 py-4 lg:hidden">
             <div className="space-y-3">
-              <div className="grid gap-1.5 text-base font-medium text-[#0C1B2E] sm:grid-cols-2">
+              <div className="grid gap-1.5 text-base font-medium text-[var(--ak-ink)] sm:grid-cols-2">
                 {[
                   ['#resources', t.navResources],
                   ['#how-it-works', t.navHowItWorks],
@@ -336,14 +335,14 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                     key={href}
                     href={href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className="rounded-lg px-3 py-2.5 hover:bg-[#E6E0D3]"
+                    className="rounded-lg px-3 py-2.5 hover:bg-[var(--ak-elevated)]"
                   >
                     {label}
                   </a>
                 ))}
               </div>
 
-              <div className="border-t border-[#D4CCB9] pt-3 space-y-3">
+              <div className="border-t border-[var(--ak-divider)] pt-3 space-y-3">
                 {currentUser ? (
                   <button
                     type="button"
@@ -351,7 +350,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                       setMobileMenuOpen(false);
                       onEnterDashboard();
                     }}
-                    className="min-h-[44px] w-full rounded-lg bg-[#0C1B2E] px-4 py-2.5 text-sm font-semibold text-[#F6F3EB]"
+                    className="min-h-[44px] w-full rounded-lg bg-[#C9642E] px-4 py-2.5 text-sm font-semibold text-[#F8F5EE]"
                   >
                     {t.openDashboard}
                   </button>
@@ -363,7 +362,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                         setMobileMenuOpen(false);
                         onOpenAuth('LOGIN');
                       }}
-                      className="min-h-[44px] rounded-lg border border-[#C8BFA8] bg-[#EFECE3] px-4 py-2.5 text-sm font-semibold text-[#0C1B2E]"
+                      className="min-h-[44px] rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-4 py-2.5 text-sm font-semibold text-[var(--ak-ink)]"
                     >
                       {t.signIn}
                     </button>
@@ -373,14 +372,14 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                         setMobileMenuOpen(false);
                         onOpenAuth('REGISTER_LEARNER');
                       }}
-                      className="min-h-[44px] rounded-lg bg-[#A44A1C] px-4 py-2.5 text-sm font-semibold text-[#F6F3EB]"
+                      className="min-h-[44px] rounded-lg bg-[#C9642E] px-4 py-2.5 text-sm font-semibold text-[#F8F5EE]"
                     >
                       {t.signUpFree}
                     </button>
                     <a
                       href="#apply"
                       onClick={() => setMobileMenuOpen(false)}
-                      className="flex min-h-[44px] items-center justify-center rounded-lg bg-[#0C1B2E] px-4 py-2.5 text-sm font-semibold text-[#F6F3EB]"
+                      className="flex min-h-[44px] items-center justify-center rounded-lg border border-[var(--ak-border)] bg-[var(--ak-recessed)] px-4 py-2.5 text-sm font-semibold text-[var(--ak-ink)]"
                     >
                       {t.contributorLabel}
                     </a>
@@ -397,43 +396,43 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
         <div className="grid items-stretch gap-8 lg:grid-cols-12">
           <div className="min-w-0 flex flex-col justify-between space-y-6 lg:col-span-7">
             <div className="space-y-5">
-              <p className="text-sm font-semibold text-[#A44A1C]">
+              <p className="text-sm font-semibold text-[var(--ak-accent-ink)]">
                 {gateway?.regionFocus || t.regionEyebrow}
               </p>
-              <h1 className="text-balance font-display text-[clamp(2.25rem,4.2vw,3.55rem)] font-bold leading-[1.08] tracking-tight text-[#0C1B2E]">
+              <h1 className="text-balance font-display text-[clamp(2.25rem,4.2vw,3.55rem)] font-bold leading-[1.08] tracking-tight text-[var(--ak-ink)]">
                 {t.heroHeadline}
               </h1>
-              <p className="max-w-2xl text-lg leading-relaxed text-[#2D3D50]">{t.heroSub}</p>
+              <p className="max-w-2xl text-lg leading-relaxed text-[var(--ak-ink-2)]">{t.heroSub}</p>
             </div>
 
             <div className="space-y-5">
               {/* Immediate Search Bar */}
               <form onSubmit={handleHeroSearch} className="flex max-w-2xl flex-col gap-2.5 sm:flex-row">
                 <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute top-3.5 left-4 h-5 w-5 text-[#55514A]" />
+                  <Search className="pointer-events-none absolute top-3.5 left-4 h-5 w-5 text-[var(--ak-muted)]" />
                   <input
                     type="search"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder={t.searchPlaceholder}
-                    className="min-h-[48px] w-full rounded-lg border border-[#C8BFA8] bg-[#F6F3EB] py-3 pr-4 pl-11 text-base text-[#0C1B2E] placeholder:text-[#6B665D] focus:border-[#0C1B2E] focus:outline-none"
+                    className="min-h-[48px] w-full rounded-lg border border-[var(--ak-border)] bg-[var(--ak-surface)] py-3 pr-4 pl-11 text-base text-[var(--ak-ink)] placeholder:text-[var(--ak-muted)] focus:border-[#C9642E] focus:outline-none"
                   />
                 </div>
                 <button
                   type="submit"
-                  className="min-h-[48px] rounded-lg bg-[#0C1B2E] px-6 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#1A2F4A] whitespace-nowrap"
+                  className="min-h-[48px] rounded-lg bg-[var(--ak-elevated)] border border-[var(--ak-border)] px-6 py-3 text-base font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)] whitespace-nowrap"
                 >
                   {t.search}
                 </button>
               </form>
 
-              {/* Two Clear CTAs — cleanly spaced, full-width on phone, inline on larger screens */}
+              {/* Two Clear CTAs */}
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 {currentUser ? (
                   <button
                     type="button"
                     onClick={onEnterDashboard}
-                    className="inline-flex min-h-[48px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[#A44A1C] px-6 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#8A3B14] whitespace-nowrap"
+                    className="inline-flex min-h-[48px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[#C9642E] px-6 py-3 text-base font-semibold text-[#F8F5EE] hover:bg-[#D8733C] whitespace-nowrap"
                   >
                     {t.openDashboard}
                     <ArrowRight className="h-5 w-5" />
@@ -442,7 +441,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenAuth('REGISTER_LEARNER')}
-                    className="inline-flex min-h-[48px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[#A44A1C] px-6 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#8A3B14] whitespace-nowrap"
+                    className="inline-flex min-h-[48px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[#C9642E] px-6 py-3 text-base font-semibold text-[#F8F5EE] hover:bg-[#D8733C] whitespace-nowrap"
                   >
                     {t.ctaLearner}
                     <ArrowRight className="h-5 w-5" />
@@ -450,38 +449,38 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 )}
                 <a
                   href="#apply"
-                  className="inline-flex min-h-[48px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg border border-[#0C1B2E] bg-[#F6F3EB] px-6 py-3 text-base font-semibold text-[#0C1B2E] hover:bg-[#E6E0D3] whitespace-nowrap"
+                  className="inline-flex min-h-[48px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-surface)] px-6 py-3 text-base font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated)] whitespace-nowrap"
                 >
                   {t.ctaContributor}
                 </a>
               </div>
 
-              <p className="text-sm font-medium text-[#4A463F]">{t.trustLine}</p>
+              <p className="text-sm font-medium text-[var(--ak-muted)]">{t.trustLine}</p>
             </div>
           </div>
 
-          {/* 100% African Academic Atlas Card (logo kept strictly in navbar above) */}
+          {/* 100% African Academic Atlas Card */}
           <div className="min-w-0 lg:col-span-5">
-            <div className="flex h-full flex-col justify-between overflow-hidden rounded-xl border border-[#C8BFA8] bg-[#0C1B2E] text-[#F6F3EB]">
+            <div className="flex h-full flex-col justify-between overflow-hidden rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] text-[var(--ak-ink)]">
               <div className="african-weave-rule" />
               <div className="flex flex-1 flex-col justify-between p-6 sm:p-7">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-[#243952] bg-[#13263E] text-[#E8B288]">
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-[var(--ak-border)] bg-[var(--ak-elevated)] text-[var(--ak-accent-ink)]">
                     <GraduationCap className="h-8 w-8" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[#E8B288]">{t.atlasEyebrow}</p>
-                    <h2 className="font-display text-2xl font-bold text-[#F6F3EB]">
+                    <p className="text-sm font-semibold text-[var(--ak-accent-ink)]">{t.atlasEyebrow}</p>
+                    <h2 className="font-display text-2xl font-bold text-[var(--ak-ink)]">
                       {brandName} · {t.atlasTitle}
                     </h2>
-                    <p className="mt-0.5 text-sm text-[#CBD5E1]">
+                    <p className="mt-0.5 text-sm text-[var(--ak-ink-2)]">
                       Kampala · Nairobi · Kigali · Dar es Salaam · Accra · Dakar
                     </p>
                   </div>
                 </div>
 
-                <div className="my-6 space-y-3 border-y border-[#243952] py-5 text-sm">
-                  <p className="font-semibold text-[#E8B288]">{t.atlasBoardsTitle}</p>
+                <div className="my-6 space-y-3 border-y border-[var(--ak-divider)] py-5 text-sm">
+                  <p className="font-semibold text-[var(--ak-accent-ink)]">{t.atlasBoardsTitle}</p>
                   <div className="grid gap-2.5 sm:grid-cols-2">
                     {[
                       'Uganda · UNEB, UBTEB, NCHE',
@@ -493,7 +492,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                     ].map((board) => (
                       <div
                         key={board}
-                        className="rounded-lg border border-[#243952] bg-[#13263E] px-3.5 py-2.5 text-sm font-medium text-[#F6F3EB]"
+                        className="rounded-lg border border-[var(--ak-border)] bg-[var(--ak-recessed)] px-3.5 py-2.5 text-sm font-medium text-[var(--ak-ink)]"
                       >
                         {board}
                       </div>
@@ -501,9 +500,9 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[#CBD5E1]">
+                <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--ak-ink-2)]">
                   <span>{t.atlasFooterLeft}</span>
-                  <span className="font-mono-nums font-semibold text-[#E8B288]">
+                  <span className="font-mono-nums font-semibold text-[var(--ak-accent-ink)]">
                     Mobile Money · M-Pesa
                   </span>
                 </div>
@@ -512,46 +511,46 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
           </div>
         </div>
 
-        {/* 3. Trust Strip (live system counts + qualitative signals) */}
-        <div className="mt-10 rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] px-6 py-6">
+        {/* 3. Trust Strip */}
+        <div className="mt-10 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] px-6 py-6">
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <p className="text-sm font-medium text-[#4A463F]">{t.trustEducators}</p>
-              <p className="mt-1 text-2xl font-bold text-[#0C1B2E] font-mono-nums">
+              <p className="text-sm font-medium text-[var(--ak-muted)]">{t.trustEducators}</p>
+              <p className="mt-1 text-2xl font-bold text-[var(--ak-ink)] font-mono-nums">
                 {gateway?.stats.verifiedEducatorsCount ?? 0} {t.statUnitActive}
               </p>
             </div>
             <div>
-              <p className="text-sm font-medium text-[#4A463F]">{t.trustResources}</p>
-              <p className="mt-1 text-2xl font-bold text-[#0C1B2E] font-mono-nums">
+              <p className="text-sm font-medium text-[var(--ak-muted)]">{t.trustResources}</p>
+              <p className="mt-1 text-2xl font-bold text-[var(--ak-ink)] font-mono-nums">
                 {gateway?.stats.availableResourcesCount ?? 0} {t.statUnitFiles}
               </p>
             </div>
             <div>
-              <p className="text-sm font-medium text-[#4A463F]">{t.trustLearners}</p>
-              <p className="mt-1 text-2xl font-bold text-[#0C1B2E] font-mono-nums">
+              <p className="text-sm font-medium text-[var(--ak-muted)]">{t.trustLearners}</p>
+              <p className="mt-1 text-2xl font-bold text-[var(--ak-ink)] font-mono-nums">
                 {gateway?.stats.registeredLearnersCount ?? 0} {t.statUnitEnrolled}
               </p>
             </div>
             <div>
-              <p className="text-sm font-medium text-[#4A463F]">{t.trustSubjects}</p>
-              <p className="mt-1 text-2xl font-bold text-[#0C1B2E] font-mono-nums">
+              <p className="text-sm font-medium text-[var(--ak-muted)]">{t.trustSubjects}</p>
+              <p className="mt-1 text-2xl font-bold text-[var(--ak-ink)] font-mono-nums">
                 {gateway?.stats.subjectsCount ?? 0} {t.statUnitSubjects} ·{' '}
                 {gateway?.educationLevels.length ?? 0} {t.statUnitLevels}
               </p>
             </div>
           </div>
-          <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-2.5 border-t border-[#D4CCB9] pt-4 text-sm font-medium text-[#2D3D50]">
+          <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-2.5 border-t border-[var(--ak-divider)] pt-4 text-sm font-medium text-[var(--ak-ink-2)]">
             <span className="inline-flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-[#1E5631]" />
+              <CheckCircle2 className="h-4 w-4 text-[var(--ak-ok-fg)]" />
               {t.trustSignal1}
             </span>
             <span className="inline-flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-[#1E5631]" />
+              <CheckCircle2 className="h-4 w-4 text-[var(--ak-ok-fg)]" />
               {t.trustSignal2}
             </span>
             <span className="inline-flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-[#1E5631]" />
+              <CheckCircle2 className="h-4 w-4 text-[var(--ak-ok-fg)]" />
               {t.trustSignal3}
             </span>
           </div>
@@ -559,24 +558,24 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       </section>
 
       {/* 4. How It Works (Audience Tabs) */}
-      <section id="how-it-works" className="border-t border-[#D4CCB9] bg-[#E6E0D3] py-14">
+      <section id="how-it-works" className="border-t border-[var(--ak-divider)] bg-[var(--ak-recessed)] py-14">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h2 className="font-display text-3xl font-bold tracking-tight text-[#0C1B2E]">
+              <h2 className="font-display text-3xl font-bold tracking-tight text-[var(--ak-ink)]">
                 {t.howItWorksTitle}
               </h2>
-              <p className="mt-1.5 text-base text-[#2D3D50]">{t.howItWorksSub}</p>
+              <p className="mt-1.5 text-base text-[var(--ak-ink-2)]">{t.howItWorksSub}</p>
             </div>
 
-            <div className="grid w-full grid-cols-2 rounded-lg border border-[#C8BFA8] bg-[#F6F3EB] p-1 sm:inline-flex sm:w-auto">
+            <div className="grid w-full grid-cols-2 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-surface)] p-1 sm:inline-flex sm:w-auto">
               <button
                 type="button"
                 onClick={() => setHowTab('LEARNER')}
-                className={`rounded-md px-5 py-2.5 text-sm font-semibold transition-colors ${
+                className={`rounded-md px-5 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap ${
                   howTab === 'LEARNER'
-                    ? 'bg-[#0C1B2E] text-[#F6F3EB]'
-                    : 'text-[#2D3D50] hover:text-[#0C1B2E]'
+                    ? 'bg-[#C9642E] text-[#F8F5EE]'
+                    : 'text-[var(--ak-ink-2)] hover:text-[var(--ak-ink)]'
                 }`}
               >
                 {t.imLearner}
@@ -584,10 +583,10 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               <button
                 type="button"
                 onClick={() => setHowTab('EDUCATOR')}
-                className={`rounded-md px-5 py-2.5 text-sm font-semibold transition-colors ${
+                className={`rounded-md px-5 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap ${
                   howTab === 'EDUCATOR'
-                    ? 'bg-[#0C1B2E] text-[#F6F3EB]'
-                    : 'text-[#2D3D50] hover:text-[#0C1B2E]'
+                    ? 'bg-[#C9642E] text-[#F8F5EE]'
+                    : 'text-[var(--ak-ink-2)] hover:text-[var(--ak-ink)]'
                 }`}
               >
                 {t.imEducator}
@@ -616,13 +615,13 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               ].map((s) => (
                 <div
                   key={s.step}
-                  className="rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-6"
+                  className="rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-6"
                 >
-                  <p className="font-mono text-sm font-bold text-[#A44A1C]">
+                  <p className="font-mono text-sm font-bold text-[var(--ak-accent-ink)]">
                     {t.stepLabel} {s.step}
                   </p>
-                  <h3 className="mt-2 font-display text-lg font-bold text-[#0C1B2E]">{s.title}</h3>
-                  <p className="mt-2 text-base leading-relaxed text-[#2D3D50]">{s.desc}</p>
+                  <h3 className="mt-2 font-display text-lg font-bold text-[var(--ak-ink)]">{s.title}</h3>
+                  <p className="mt-2 text-base leading-relaxed text-[var(--ak-ink-2)]">{s.desc}</p>
                 </div>
               ))}
             </div>
@@ -631,13 +630,13 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               {(gateway?.onboardingSteps || []).map((s) => (
                 <div
                   key={s.step}
-                  className="rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-6"
+                  className="rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-6"
                 >
-                  <p className="font-mono text-sm font-bold text-[#A44A1C]">
+                  <p className="font-mono text-sm font-bold text-[var(--ak-accent-ink)]">
                     {t.stepLabel} {s.step} · {s.actor}
                   </p>
-                  <h3 className="mt-2 font-display text-lg font-bold text-[#0C1B2E]">{s.title}</h3>
-                  <p className="mt-2 text-base leading-relaxed text-[#2D3D50]">{s.summary}</p>
+                  <h3 className="mt-2 font-display text-lg font-bold text-[var(--ak-ink)]">{s.title}</h3>
+                  <p className="mt-2 text-base leading-relaxed text-[var(--ak-ink-2)]">{s.summary}</p>
                 </div>
               ))}
             </div>
@@ -649,31 +648,31 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       <section id="resources" className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="max-w-3xl">
-            <h2 className="font-display text-3xl font-bold tracking-tight text-[#0C1B2E]">
+            <h2 className="font-display text-3xl font-bold tracking-tight text-[var(--ak-ink)]">
               {t.resourcesTitle}
             </h2>
-            <p className="mt-1.5 text-base text-[#2D3D50]">{t.resourcesSub}</p>
+            <p className="mt-1.5 text-base text-[var(--ak-ink-2)]">{t.resourcesSub}</p>
           </div>
           <button
             type="button"
             onClick={() => setFreeOnly((v) => !v)}
-            className={`min-h-[44px] w-full sm:w-auto rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
+            className={`min-h-[44px] w-full sm:w-auto rounded-lg border px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
               freeOnly
-                ? 'border-[#1E5631] bg-[#1E5631] text-[#F6F3EB]'
-                : 'border-[#C8BFA8] bg-[#F6F3EB] text-[#0C1B2E] hover:bg-[#E6E0D3]'
+                ? 'border-emerald-600 bg-emerald-700 text-white'
+                : 'border-[var(--ak-border)] bg-[var(--ak-surface)] text-[var(--ak-ink)] hover:bg-[var(--ak-elevated)]'
             }`}
           >
             {freeOnly ? t.showingFreeOnly : t.filterFreeOnly}
           </button>
         </div>
 
-        {/* Clean Responsive Level & Format Controls (dropdown on small screens, segmented bar on desktop) */}
+        {/* Clean Responsive Level & Format Controls */}
         <div className="mt-6 grid gap-3 sm:hidden">
           <select
             aria-label="Filter by Education Level"
             value={levelFilter}
             onChange={(e) => setLevelFilter(e.target.value as LevelFilter)}
-            className="min-h-[44px] w-full rounded-lg border border-[#C8BFA8] bg-[#F6F3EB] px-3.5 py-2 text-sm font-semibold text-[#0C1B2E]"
+            className="min-h-[44px] w-full rounded-lg border border-[var(--ak-border)] bg-[var(--ak-surface)] px-3.5 py-2 text-sm font-semibold text-[var(--ak-ink)]"
           >
             {(['All Levels', 'Primary', 'O-Level', 'A-Level', 'Vocational', 'University', 'Professional'] as LevelFilter[]).map(
               (lvl) => (
@@ -687,7 +686,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             aria-label="Filter by File Format"
             value={formatFilter}
             onChange={(e) => setFormatFilter(e.target.value as 'ALL' | ResourceType)}
-            className="min-h-[44px] w-full rounded-lg border border-[#C8BFA8] bg-[#F6F3EB] px-3.5 py-2 text-sm font-semibold text-[#0C1B2E]"
+            className="min-h-[44px] w-full rounded-lg border border-[var(--ak-border)] bg-[var(--ak-surface)] px-3.5 py-2 text-sm font-semibold text-[var(--ak-ink)]"
           >
             {(['ALL', 'PDF', 'DOCX', 'VIDEO', 'BOOK', 'IMAGE'] as const).map((fmt) => (
               <option key={fmt} value={fmt}>
@@ -714,10 +713,10 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 key={lvl}
                 type="button"
                 onClick={() => setLevelFilter(lvl)}
-                className={`min-h-[40px] rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+                className={`min-h-[40px] rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
                   levelFilter === lvl
-                    ? 'bg-[#0C1B2E] text-[#F6F3EB]'
-                    : 'border border-[#C8BFA8] bg-[#F6F3EB] text-[#2D3D50] hover:bg-[#E6E0D3]'
+                    ? 'bg-[#C9642E] text-[#F8F5EE]'
+                    : 'border border-[var(--ak-border)] bg-[var(--ak-surface)] text-[var(--ak-ink-2)] hover:bg-[var(--ak-elevated)] hover:text-[var(--ak-ink)]'
                 }`}
               >
                 {lvl === 'All Levels' ? t.allLevels : lvl}
@@ -725,7 +724,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             ))}
           </div>
 
-          <div className="flex items-center gap-1 rounded-lg border border-[#C8BFA8] bg-[#E6E0D3] p-1">
+          <div className="flex items-center gap-1 rounded-lg border border-[var(--ak-border)] bg-[var(--ak-recessed)] p-1">
             {(['ALL', 'PDF', 'DOCX', 'VIDEO', 'BOOK', 'IMAGE'] as const).map((fmt) => (
               <button
                 key={fmt}
@@ -733,8 +732,8 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 onClick={() => setFormatFilter(fmt)}
                 className={`rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
                   formatFilter === fmt
-                    ? 'bg-[#0C1B2E] text-[#F6F3EB]'
-                    : 'text-[#2D3D50] hover:text-[#0C1B2E]'
+                    ? 'bg-[var(--ak-elevated)] text-[var(--ak-ink)]'
+                    : 'text-[var(--ak-muted)] hover:text-[var(--ak-ink)]'
                 }`}
               >
                 {fmt}
@@ -744,7 +743,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
         </div>
 
         {filteredResources.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-8 text-center text-base text-[#4A463F]">
+          <div className="mt-6 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-8 text-center text-base text-[var(--ak-muted)]">
             {t.noOpenResources}
           </div>
         ) : (
@@ -752,29 +751,29 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             {filteredResources.map((r) => (
               <article
                 key={r.id}
-                className="flex flex-col justify-between rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-6"
+                className="flex flex-col justify-between rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-6"
               >
                 <div>
-                  <div className="flex items-center justify-between gap-2 text-sm text-[#4A463F]">
-                    <span className="inline-flex items-center gap-1.5 font-semibold text-[#0C1B2E]">
-                      <FileText className="h-4 w-4 text-[#A44A1C]" />
+                  <div className="flex items-center justify-between gap-2 text-sm text-[var(--ak-muted)]">
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--ak-ink)]">
+                      <FileText className="h-4 w-4 text-[var(--ak-accent-ink)]" />
                       {r.type} · {r.levelBucket}
                     </span>
-                    <span className="font-mono-nums font-bold text-[#1E5631]">{r.priceLabel}</span>
+                    <span className="font-mono-nums font-bold text-[var(--ak-ok-fg)]">{r.priceLabel}</span>
                   </div>
-                  <h3 className="mt-3 font-display text-lg font-bold text-[#0C1B2E]">{r.title}</h3>
-                  <p className="mt-2 text-base leading-relaxed text-[#2D3D50]">{r.description}</p>
+                  <h3 className="mt-3 font-display text-lg font-bold text-[var(--ak-ink)]">{r.title}</h3>
+                  <p className="mt-2 text-base leading-relaxed text-[var(--ak-ink-2)]">{r.description}</p>
                 </div>
 
-                <div className="mt-5 flex items-center justify-between gap-3 border-t border-[#D4CCB9] pt-4 text-sm">
-                  <span className="inline-flex items-center gap-1.5 font-medium text-[#2D3D50] truncate">
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#1E5631]" />
+                <div className="mt-5 flex items-center justify-between gap-3 border-t border-[var(--ak-divider)] pt-4 text-sm">
+                  <span className="inline-flex items-center gap-1.5 font-medium text-[var(--ak-ink-2)] truncate">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--ak-ok-fg)]" />
                     <span className="truncate">{r.contributorName}</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => (currentUser ? onEnterDashboard() : onOpenAuth('LOGIN'))}
-                    className="font-semibold text-[#A44A1C] hover:underline whitespace-nowrap shrink-0"
+                    className="font-semibold text-[var(--ak-accent-ink)] hover:underline whitespace-nowrap shrink-0"
                   >
                     {currentUser ? t.openInLibrary : t.signInToAccess}
                   </button>
@@ -786,22 +785,22 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       </section>
 
       {/* 6. Live Sessions Highlight */}
-      <section id="live" className="border-y border-[#D4CCB9] bg-[#E6E0D3] py-14">
+      <section id="live" className="border-y border-[var(--ak-divider)] bg-[var(--ak-recessed)] py-14">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="grid gap-8 lg:grid-cols-12">
             <div className="space-y-4 lg:col-span-5">
-              <p className="text-sm font-semibold text-[#A44A1C]">{t.liveEyebrow}</p>
-              <h2 className="font-display text-3xl font-bold tracking-tight text-[#0C1B2E]">
+              <p className="text-sm font-semibold text-[var(--ak-accent-ink)]">{t.liveEyebrow}</p>
+              <h2 className="font-display text-3xl font-bold tracking-tight text-[var(--ak-ink)]">
                 {t.liveTitle}
               </h2>
-              <p className="text-base leading-relaxed text-[#2D3D50]">{t.liveSub}</p>
-              <div className="flex items-start gap-3 rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-5 text-sm text-[#2D3D50]">
-                <Wifi className="mt-0.5 h-5 w-5 shrink-0 text-[#A44A1C]" />
+              <p className="text-base leading-relaxed text-[var(--ak-ink-2)]">{t.liveSub}</p>
+              <div className="flex items-start gap-3 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-5 text-sm text-[var(--ak-ink-2)]">
+                <Wifi className="mt-0.5 h-5 w-5 shrink-0 text-[var(--ak-accent-ink)]" />
                 <div>
-                  <p className="text-base font-bold text-[#0C1B2E]">
+                  <p className="text-base font-bold text-[var(--ak-ink)]">
                     {gateway?.brandConfig.lowDataNote || t.lowDataTitle}
                   </p>
-                  <p className="mt-1 leading-relaxed text-[#2D3D50]">{t.lowDataDesc}</p>
+                  <p className="mt-1 leading-relaxed text-[var(--ak-ink-2)]">{t.lowDataDesc}</p>
                 </div>
               </div>
             </div>
@@ -811,20 +810,20 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 gateway.upcomingSeminars.map((s) => (
                   <div
                     key={s.id}
-                    className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-6"
+                    className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-6"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-sm text-[#4A463F]">
-                        <Radio className="h-4 w-4 text-[#A44A1C]" />
-                        <span className="font-bold text-[#0C1B2E]">{s.status}</span>
+                      <div className="flex items-center gap-2 text-sm text-[var(--ak-muted)]">
+                        <Radio className="h-4 w-4 text-[var(--ak-accent-ink)]" />
+                        <span className="font-bold text-[var(--ak-ink)]">{s.status}</span>
                         <span aria-hidden="true">·</span>
-                        <span className="font-medium">{s.hostName}</span>
+                        <span className="font-medium text-[var(--ak-ink-2)]">{s.hostName}</span>
                       </div>
-                      <h3 className="mt-1.5 font-display text-lg font-bold text-[#0C1B2E]">
+                      <h3 className="mt-1.5 font-display text-lg font-bold text-[var(--ak-ink)]">
                         {s.title}
                       </h3>
-                      <p className="mt-1 text-base text-[#2D3D50]">{s.topicSummary}</p>
-                      <p className="mt-2 font-mono text-sm text-[#4A463F]">
+                      <p className="mt-1 text-base text-[var(--ak-ink-2)]">{s.topicSummary}</p>
+                      <p className="mt-2 font-mono text-sm text-[var(--ak-muted)]">
                         {t.localTimeLabel}:{' '}
                         {new Intl.DateTimeFormat(undefined, {
                           dateStyle: 'medium',
@@ -835,14 +834,14 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                     <button
                       type="button"
                       onClick={() => (currentUser ? onEnterDashboard() : onOpenAuth('LOGIN'))}
-                      className="min-h-[44px] w-full sm:w-auto rounded-lg bg-[#0C1B2E] px-5 py-2.5 text-sm font-semibold text-[#F6F3EB] hover:bg-[#1A2F4A] whitespace-nowrap"
+                      className="min-h-[44px] w-full sm:w-auto rounded-lg bg-[#C9642E] px-5 py-2.5 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] whitespace-nowrap"
                     >
                       {currentUser ? t.enterLiveSchedule : t.signInToJoin}
                     </button>
                   </div>
                 ))
               ) : (
-                <div className="rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-6 text-base text-[#2D3D50]">
+                <div className="rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-6 text-base text-[var(--ak-ink-2)]">
                   {t.noLivePublic}
                 </div>
               )}
@@ -854,21 +853,21 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       {/* 7. Featured Educators & Partner Institutions */}
       <section id="educators" className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
         <div className="max-w-3xl">
-          <h2 className="font-display text-3xl font-bold tracking-tight text-[#0C1B2E]">
+          <h2 className="font-display text-3xl font-bold tracking-tight text-[var(--ak-ink)]">
             {t.educatorsTitle}
           </h2>
-          <p className="mt-1.5 text-base text-[#2D3D50]">{t.educatorsSub}</p>
+          <p className="mt-1.5 text-base text-[var(--ak-ink-2)]">{t.educatorsSub}</p>
         </div>
 
         <div className="mt-6 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           {gateway?.featuredCreators.map((cr) => (
             <div
               key={cr.publicKey}
-              className="flex flex-col justify-between rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-5"
+              className="flex flex-col justify-between rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-5"
             >
               <div>
                 <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#C8BFA8] bg-[#0C1B2E] font-display text-base font-bold text-[#F6F3EB]">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[var(--ak-border)] bg-[var(--ak-elevated)] font-display text-base font-bold text-[var(--ak-accent-ink)]">
                     {cr.displayName
                       .split(' ')
                       .filter(Boolean)
@@ -879,24 +878,24 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <h3 className="truncate font-display text-base font-bold text-[#0C1B2E]">
+                      <h3 className="truncate font-display text-base font-bold text-[var(--ak-ink)]">
                         {cr.displayName}
                       </h3>
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-[#1E5631]" />
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--ak-ok-fg)]" />
                     </div>
-                    <p className="truncate text-sm text-[#4A463F]">{cr.specialization}</p>
+                    <p className="truncate text-sm text-[var(--ak-muted)]">{cr.specialization}</p>
                   </div>
                 </div>
-                <p className="mt-3 text-sm leading-relaxed text-[#2D3D50]">{cr.bio}</p>
+                <p className="mt-3 text-sm leading-relaxed text-[var(--ak-ink-2)]">{cr.bio}</p>
               </div>
-              <div className="mt-4 flex items-center justify-between border-t border-[#D4CCB9] pt-3.5 text-sm">
-                <span className="font-mono-nums font-medium text-[#4A463F]">
+              <div className="mt-4 flex items-center justify-between border-t border-[var(--ak-divider)] pt-3.5 text-sm">
+                <span className="font-mono-nums font-medium text-[var(--ak-muted)]">
                   {cr.followersCount} {t.followersWord}
                 </span>
                 <button
                   type="button"
                   onClick={() => (currentUser ? onEnterDashboard() : onOpenAuth('REGISTER_LEARNER'))}
-                  className="rounded-lg border border-[#C8BFA8] bg-[#EFECE3] px-3.5 py-1.5 font-semibold text-[#0C1B2E] hover:bg-[#E6E0D3]"
+                  className="rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-3.5 py-1.5 font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)] whitespace-nowrap"
                 >
                   {t.follow}
                 </button>
@@ -906,17 +905,17 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
         </div>
 
         {institutions.length > 0 && (
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] px-6 py-4">
-            <span className="text-sm font-semibold text-[#4A463F]">
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] px-6 py-4">
+            <span className="text-sm font-semibold text-[var(--ak-muted)]">
               {t.partnerInsts} · {brandName}
             </span>
             <div className="flex flex-wrap items-center gap-6">
               {institutions.map((inst) => (
                 <span
                   key={inst.publicKey}
-                  className="inline-flex items-center gap-2 text-base font-semibold text-[#0C1B2E]"
+                  className="inline-flex items-center gap-2 text-base font-semibold text-[var(--ak-ink)]"
                 >
-                  <GraduationCap className="h-5 w-5 text-[#A44A1C]" />
+                  <GraduationCap className="h-5 w-5 text-[var(--ak-accent-ink)]" />
                   {inst.displayName}
                 </span>
               ))}
@@ -926,11 +925,11 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       </section>
 
       {/* 8. Verification, Safety & Youth Protection */}
-      <section id="safety" className="border-y border-[#D4CCB9] bg-[#E6E0D3] py-14">
+      <section id="safety" className="border-y border-[var(--ak-divider)] bg-[var(--ak-recessed)] py-14">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold text-[#A44A1C]">{t.trustEyebrow}</p>
-            <h2 className="mt-1 font-display text-3xl font-bold tracking-tight text-[#0C1B2E]">
+            <p className="text-sm font-semibold text-[var(--ak-accent-ink)]">{t.trustEyebrow}</p>
+            <h2 className="mt-1 font-display text-3xl font-bold tracking-tight text-[var(--ak-ink)]">
               {t.trustTitle}
             </h2>
           </div>
@@ -946,24 +945,24 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             ].map((card) => (
               <div
                 key={card.title}
-                className="rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-6"
+                className="rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-6"
               >
-                <div className="flex items-center gap-2.5 text-base font-bold text-[#0C1B2E]">
-                  <ShieldCheck className="h-5 w-5 shrink-0 text-[#A44A1C]" />
+                <div className="flex items-center gap-2.5 text-base font-bold text-[var(--ak-ink)]">
+                  <ShieldCheck className="h-5 w-5 shrink-0 text-[var(--ak-accent-ink)]" />
                   <span>{card.title}</span>
                 </div>
-                <p className="mt-2.5 text-base leading-relaxed text-[#2D3D50]">{card.body}</p>
+                <p className="mt-2.5 text-base leading-relaxed text-[var(--ak-ink-2)]">{card.body}</p>
               </div>
             ))}
           </div>
 
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 text-sm text-[#2D3D50]">
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 text-sm text-[var(--ak-ink-2)]">
             <span>
               {t.privacyLinePrefix}{' '}
               <button
                 type="button"
                 onClick={() => setPolicyModal('PRIVACY')}
-                className="font-semibold text-[#0C1B2E] underline"
+                className="font-semibold text-[var(--ak-accent-ink)] underline"
               >
                 {t.readPrivacyPolicy}
               </button>
@@ -971,7 +970,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             <button
               type="button"
               onClick={() => setPolicyModal('REPORT')}
-              className="inline-flex items-center gap-1.5 font-semibold text-red-800 hover:underline"
+              className="inline-flex items-center gap-1.5 font-semibold text-[var(--ak-err-fg)] hover:underline"
             >
               <AlertTriangle className="h-4 w-4" />
               {t.reportConcern}
@@ -983,15 +982,15 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       {/* 9. Transparent Pricing & African Payment Rails */}
       <section id="pricing" className="mx-auto max-w-7xl space-y-10 px-4 py-14 sm:px-6">
         <div>
-          <h2 className="font-display text-3xl font-bold tracking-tight text-[#0C1B2E]">
+          <h2 className="font-display text-3xl font-bold tracking-tight text-[var(--ak-ink)]">
             {t.pricingTitle}
           </h2>
-          <p className="mt-1.5 text-base text-[#2D3D50]">{t.pricingSub}</p>
+          <p className="mt-1.5 text-base text-[var(--ak-ink-2)]">{t.pricingSub}</p>
         </div>
 
         {/* Learner Pricing */}
         <div>
-          <h3 className="mb-4 font-display text-xl font-bold text-[#0C1B2E]">{t.forLearners}</h3>
+          <h3 className="mb-4 font-display text-xl font-bold text-[var(--ak-ink)]">{t.forLearners}</h3>
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { name: t.tier1Name, price: t.tier1Price, desc: t.tier1Desc },
@@ -1001,32 +1000,32 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             ].map((tier) => (
               <div
                 key={tier.name}
-                className="rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-6"
+                className="rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-6"
               >
-                <p className="text-sm font-semibold text-[#4A463F]">{tier.name}</p>
-                <p className="mt-1.5 font-mono-nums text-2xl font-bold text-[#0C1B2E]">
+                <p className="text-sm font-semibold text-[var(--ak-muted)]">{tier.name}</p>
+                <p className="mt-1.5 font-mono-nums text-2xl font-bold text-[var(--ak-accent-ink)]">
                   {tier.price}
                 </p>
-                <p className="mt-2.5 text-base leading-relaxed text-[#2D3D50]">{tier.desc}</p>
+                <p className="mt-2.5 text-base leading-relaxed text-[var(--ak-ink-2)]">{tier.desc}</p>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Contributor Plan Comparison (Cards on mobile, fixed table on desktop) */}
-        <div className="overflow-hidden rounded-xl border border-[#C8BFA8] bg-[#F6F3EB]">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D4CCB9] px-6 py-5">
+        {/* Contributor Plan Comparison */}
+        <div className="overflow-hidden rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ak-divider)] px-6 py-5">
             <div>
-              <h3 className="font-display text-xl font-bold text-[#0C1B2E]">
+              <h3 className="font-display text-xl font-bold text-[var(--ak-ink)]">
                 {t.forContributors}
               </h3>
-              <p className="text-sm text-[#4A463F]">{t.appsReviewedNote}</p>
+              <p className="text-sm text-[var(--ak-muted)]">{t.appsReviewedNote}</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#0C1B2E]">
+            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--ak-ink)]">
               {gateway?.brandConfig.paymentMethods.map((pm) => (
                 <span
                   key={pm}
-                  className="rounded-md border border-[#C8BFA8] bg-[#EFECE3] px-3 py-1"
+                  className="rounded-md border border-[var(--ak-border)] bg-[var(--ak-recessed)] px-3 py-1"
                 >
                   {pm}
                 </span>
@@ -1034,33 +1033,33 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             </div>
           </div>
 
-          <div className="divide-y divide-[#D4CCB9] md:hidden">
+          <div className="divide-y divide-[var(--ak-divider)] md:hidden">
             {contributorPlans.map((p) => (
               <div key={p.id} className="p-5 space-y-2 text-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-base font-bold text-[#0C1B2E]">{p.name}</p>
-                    <p className="text-[#4A463F]">{p.audience}</p>
+                    <p className="text-base font-bold text-[var(--ak-ink)]">{p.name}</p>
+                    <p className="text-[var(--ak-muted)]">{p.audience}</p>
                   </div>
-                  <span className="font-mono-nums text-base font-bold text-[#A44A1C] shrink-0">
+                  <span className="font-mono-nums text-base font-bold text-[var(--ak-accent-ink)] shrink-0">
                     ${p.monthlyUsd} / mo
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 pt-2 text-[#2D3D50]">
+                <div className="grid grid-cols-2 gap-2 pt-2 text-[var(--ak-ink-2)]">
                   <div>
-                    <span className="font-semibold text-[#0C1B2E]">{t.colStorage}: </span>
+                    <span className="font-semibold text-[var(--ak-ink)]">{t.colStorage}: </span>
                     {p.storageLabel}
                   </div>
                   <div>
-                    <span className="font-semibold text-[#0C1B2E]">{t.colLiveCap}: </span>
+                    <span className="font-semibold text-[var(--ak-ink)]">{t.colLiveCap}: </span>
                     {p.liveCapacityLabel}
                   </div>
                   <div>
-                    <span className="font-semibold text-[#0C1B2E]">{t.colCommission}: </span>
+                    <span className="font-semibold text-[var(--ak-ink)]">{t.colCommission}: </span>
                     {p.commissionLabel}
                   </div>
                   <div>
-                    <span className="font-semibold text-[#0C1B2E]">{t.colStaffVerify}: </span>
+                    <span className="font-semibold text-[var(--ak-ink)]">{t.colStaffVerify}: </span>
                     {p.id === 'INSTITUTION_CAMPUS'
                       ? 'Multi-staff Course Admins'
                       : 'Single educator'}
@@ -1072,7 +1071,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
           <div className="hidden md:block">
             <table className="w-full table-fixed text-left text-sm">
-              <thead className="border-b border-[#D4CCB9] bg-[#E6E0D3] text-[#0C1B2E]">
+              <thead className="border-b border-[var(--ak-divider)] bg-[var(--ak-recessed)] text-[var(--ak-ink-2)]">
                 <tr>
                   <th className="w-[22%] px-5 py-3.5 font-bold">{t.colPlan}</th>
                   <th className="w-[14%] px-4 py-3.5 font-bold">{t.colMonthly}</th>
@@ -1082,20 +1081,20 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   <th className="w-[22%] px-5 py-3.5 font-bold">{t.colStaffVerify}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#D4CCB9]">
+              <tbody className="divide-y divide-[var(--ak-divider)]">
                 {contributorPlans.map((p) => (
                   <tr key={p.id}>
                     <td className="px-5 py-4 align-top">
-                      <p className="text-base font-bold text-[#0C1B2E] break-words">{p.name}</p>
-                      <p className="text-sm text-[#4A463F] break-words">{p.audience}</p>
+                      <p className="text-base font-bold text-[var(--ak-ink)] break-words">{p.name}</p>
+                      <p className="text-sm text-[var(--ak-muted)] break-words">{p.audience}</p>
                     </td>
-                    <td className="px-4 py-4 align-top font-mono-nums text-base font-bold text-[#A44A1C]">
+                    <td className="px-4 py-4 align-top font-mono-nums text-base font-bold text-[var(--ak-accent-ink)]">
                       ${p.monthlyUsd} / mo
                     </td>
-                    <td className="px-4 py-4 align-top text-[#2D3D50]">{p.storageLabel}</td>
-                    <td className="px-4 py-4 align-top text-[#2D3D50]">{p.liveCapacityLabel}</td>
-                    <td className="px-4 py-4 align-top text-[#2D3D50]">{p.commissionLabel}</td>
-                    <td className="px-5 py-4 align-top text-[#2D3D50] break-words">
+                    <td className="px-4 py-4 align-top text-[var(--ak-ink-2)]">{p.storageLabel}</td>
+                    <td className="px-4 py-4 align-top text-[var(--ak-ink-2)]">{p.liveCapacityLabel}</td>
+                    <td className="px-4 py-4 align-top text-[var(--ak-ink-2)]">{p.commissionLabel}</td>
+                    <td className="px-5 py-4 align-top text-[var(--ak-ink-2)] break-words">
                       {p.id === 'INSTITUTION_CAMPUS'
                         ? 'Multi-staff Course Admins + Registrar clearance'
                         : 'Single educator · direct prerequisite verification'}
@@ -1109,18 +1108,18 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       </section>
 
       {/* 10. For Educators & Institutions Conversion Section */}
-      <section id="for-educators" className="border-t border-[#243952] bg-[#0C1B2E] py-14 text-[#F6F3EB]">
+      <section id="for-educators" className="border-t border-[var(--ak-divider)] bg-[var(--ak-recessed)] py-14 text-[var(--ak-ink)]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="grid items-center gap-8 lg:grid-cols-12">
             <div className="space-y-4 lg:col-span-6">
-              <p className="text-sm font-semibold text-[#E8B288]">{t.forEducatorsEyebrow}</p>
+              <p className="text-sm font-semibold text-[var(--ak-accent-ink)]">{t.forEducatorsEyebrow}</p>
               <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
                 {t.forEducatorsTitle}
               </h2>
-              <p className="text-base leading-relaxed text-[#CBD5E1]">{t.forEducatorsSub}</p>
+              <p className="text-base leading-relaxed text-[var(--ak-ink-2)]">{t.forEducatorsSub}</p>
               <a
                 href="#apply"
-                className="inline-flex min-h-[48px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[#A44A1C] px-6 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#8A3B14]"
+                className="inline-flex min-h-[48px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[#C9642E] px-6 py-3 text-base font-semibold text-[#F8F5EE] hover:bg-[#D8733C] whitespace-nowrap"
               >
                 {t.ctaContributor}
                 <ArrowRight className="h-5 w-5" />
@@ -1138,9 +1137,9 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               ].map((benefit) => (
                 <div
                   key={benefit}
-                  className="flex items-start gap-2.5 rounded-xl border border-[#243952] bg-[#13263E] p-4 text-sm font-medium text-[#F6F3EB]"
+                  className="flex items-start gap-2.5 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-4 text-sm font-medium text-[var(--ak-ink)]"
                 >
-                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#6EE7B7]" />
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[var(--ak-ok-fg)]" />
                   <span>{benefit}</span>
                 </div>
               ))}
@@ -1151,22 +1150,25 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
       {/* 11. Short Public Contributor Request Form */}
       <section id="apply" className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
-        <div className="grid gap-10 rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-6 sm:p-8 lg:grid-cols-12">
+        <div className="grid gap-10 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-6 sm:p-8 lg:grid-cols-12">
           <div className="space-y-4 lg:col-span-5">
-            <h2 className="font-display text-3xl font-bold tracking-tight text-[#0C1B2E]">
+            <h2 className="font-display text-3xl font-bold tracking-tight text-[var(--ak-ink)]">
               {t.applyTitle}
             </h2>
-            <p className="text-base leading-relaxed text-[#2D3D50]">{t.applySub}</p>
-            <div className="space-y-3 border-t border-[#D4CCB9] pt-4 text-sm text-[#2D3D50]">
+            <p className="text-base leading-relaxed text-[var(--ak-ink-2)]">{t.applySub}</p>
+            <div className="space-y-3 border-t border-[var(--ak-divider)] pt-4 text-sm text-[var(--ak-ink-2)]">
               <p className="flex items-start gap-2.5">
-                <Lock className="mt-0.5 h-5 w-5 shrink-0 text-[#A44A1C]" />
+                <Lock className="mt-0.5 h-5 w-5 shrink-0 text-[var(--ak-accent-ink)]" />
                 <span>
                   {t.applyTimelinePrefix}{' '}
-                  <strong>{gateway?.brandConfig.approvalTimelineLabel || '2 business days'}</strong>.
+                  <strong className="text-[var(--ak-ink)]">
+                    {gateway?.brandConfig.approvalTimelineLabel || '2 business days'}
+                  </strong>
+                  .
                 </span>
               </p>
               <p className="flex items-start gap-2.5">
-                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#1E5631]" />
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[var(--ak-ok-fg)]" />
                 <span>{t.applyPrivacyNote}</span>
               </p>
             </div>
@@ -1174,19 +1176,19 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
           <form onSubmit={handleSubmitApplication} className="space-y-4 lg:col-span-7">
             {reqError && (
-              <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">
+              <div className="rounded-lg border border-[var(--ak-err-bd)] bg-[var(--ak-err-bg)] px-4 py-3 text-sm font-medium text-[var(--ak-err-fg)]">
                 {reqError}
               </div>
             )}
             {reqSuccess && (
-              <div className="rounded-lg border border-[#1E5631]/40 bg-[#E8F0EA] px-4 py-3 text-sm font-medium text-[#1E5631]">
+              <div className="rounded-lg border border-[var(--ak-ok-bd)] bg-[var(--ak-ok-bg)] px-4 py-3 text-sm font-medium text-[var(--ak-ok-fg)]">
                 {reqSuccess}
               </div>
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+                <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                   {t.fullName}
                 </label>
                 <input
@@ -1199,7 +1201,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+                <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                   {t.applyAccountType}
                 </label>
                 <select
@@ -1217,7 +1219,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
             {accountCategory === 'SCHOOL_INSTITUTION' && (
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+                <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                   {t.applySchoolName}
                 </label>
                 <input
@@ -1233,7 +1235,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+                <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                   {t.emailAddress}
                 </label>
                 <input
@@ -1246,7 +1248,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+                <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                   {t.applyPhone}
                 </label>
                 <input
@@ -1262,7 +1264,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+                <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                   {t.countryLabel}
                 </label>
                 <select
@@ -1278,7 +1280,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 </select>
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+                <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                   {t.applyDistrict}
                 </label>
                 <input
@@ -1291,7 +1293,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+                <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                   {t.applySystem}
                 </label>
                 <input
@@ -1306,7 +1308,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+                <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                   {t.applySubjects}
                 </label>
                 <input
@@ -1319,7 +1321,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+                <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                   {t.applyLevels}
                 </label>
                 <input
@@ -1334,7 +1336,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             </div>
 
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+              <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                 {t.applyPortfolio}
               </label>
               <input
@@ -1347,7 +1349,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             </div>
 
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-[#0C1B2E]">
+              <label className="mb-1.5 block text-sm font-semibold text-[var(--ak-ink-2)]">
                 {t.applyStatement}
               </label>
               <textarea
@@ -1360,19 +1362,19 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               />
             </div>
 
-            <label className="flex items-start gap-2.5 text-sm text-[#2D3D50]">
+            <label className="flex items-start gap-2.5 text-sm text-[var(--ak-ink-2)]">
               <input
                 type="checkbox"
                 checked={agreedToTerms}
                 onChange={(e) => setAgreedToTerms(e.target.checked)}
-                className="mt-1 h-4 w-4 accent-[#0C1B2E]"
+                className="mt-1 h-4 w-4 accent-[#C9642E]"
               />
               <span>
                 {t.applyAgreePrefix}{' '}
                 <button
                   type="button"
                   onClick={() => setPolicyModal('TERMS')}
-                  className="font-semibold text-[#0C1B2E] underline"
+                  className="font-semibold text-[var(--ak-accent-ink)] underline"
                 >
                   {t.applyTermsLink}
                 </button>{' '}
@@ -1380,7 +1382,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 <button
                   type="button"
                   onClick={() => setPolicyModal('PRIVACY')}
-                  className="font-semibold text-[#0C1B2E] underline"
+                  className="font-semibold text-[var(--ak-accent-ink)] underline"
                 >
                   {t.applyPrivacyLink}
                 </button>
@@ -1391,7 +1393,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             <button
               type="submit"
               disabled={reqSubmitting}
-              className="min-h-[48px] rounded-lg bg-[#0C1B2E] px-6 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#1A2F4A] disabled:opacity-50"
+              className="min-h-[48px] rounded-lg bg-[#C9642E] px-6 py-3 text-base font-semibold text-[#F8F5EE] hover:bg-[#D8733C] disabled:opacity-50"
             >
               {reqSubmitting ? t.submittingApplication : t.submitApplication}
             </button>
@@ -1400,28 +1402,28 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       </section>
 
       {/* 12. Founding Educators & Mission Story */}
-      <section id="about" className="border-t border-[#D4CCB9] bg-[#E6E0D3] py-14">
+      <section id="about" className="border-t border-[var(--ak-divider)] bg-[var(--ak-recessed)] py-14">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="grid gap-8 rounded-xl border border-[#C8BFA8] bg-[#F6F3EB] p-8 lg:grid-cols-12">
+          <div className="grid gap-8 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] p-8 lg:grid-cols-12">
             <div className="space-y-3 lg:col-span-7">
-              <p className="text-sm font-semibold text-[#A44A1C]">{t.aboutEyebrow}</p>
-              <h2 className="font-display text-3xl font-bold tracking-tight text-[#0C1B2E]">
+              <p className="text-sm font-semibold text-[var(--ak-accent-ink)]">{t.aboutEyebrow}</p>
+              <h2 className="font-display text-3xl font-bold tracking-tight text-[var(--ak-ink)]">
                 {t.aboutTitle}
               </h2>
-              <p className="text-base leading-relaxed text-[#2D3D50]">{t.aboutBody}</p>
+              <p className="text-base leading-relaxed text-[var(--ak-ink-2)]">{t.aboutBody}</p>
             </div>
-            <div className="flex flex-col justify-between gap-4 rounded-xl border border-[#C8BFA8] bg-[#EFECE3] p-6 lg:col-span-5">
+            <div className="flex flex-col justify-between gap-4 rounded-xl border border-[var(--ak-border)] bg-[var(--ak-recessed)] p-6 lg:col-span-5">
               <div>
-                <h3 className="font-display text-lg font-bold text-[#0C1B2E]">
+                <h3 className="font-display text-lg font-bold text-[var(--ak-ink)]">
                   {t.aboutFrameworkTitle}
                 </h3>
-                <p className="mt-1.5 text-base leading-relaxed text-[#2D3D50]">
+                <p className="mt-1.5 text-base leading-relaxed text-[var(--ak-ink-2)]">
                   {t.aboutFrameworkBody}
                 </p>
               </div>
               <a
                 href="#apply"
-                className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-lg bg-[#A44A1C] px-5 py-2.5 text-sm font-semibold text-[#F6F3EB] hover:bg-[#8A3B14]"
+                className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-lg bg-[#C9642E] px-5 py-2.5 text-sm font-semibold text-[#F8F5EE] hover:bg-[#D8733C] whitespace-nowrap"
               >
                 <Users className="h-4 w-4" />
                 {t.ctaContributor}
@@ -1434,13 +1436,13 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       {/* 13. FAQ Accordion */}
       <section id="help" className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
         <div className="max-w-2xl">
-          <h2 className="font-display text-3xl font-bold tracking-tight text-[#0C1B2E]">
+          <h2 className="font-display text-3xl font-bold tracking-tight text-[var(--ak-ink)]">
             {t.faqTitle}
           </h2>
-          <p className="mt-1.5 text-base text-[#2D3D50]">{t.faqSub}</p>
+          <p className="mt-1.5 text-base text-[var(--ak-ink-2)]">{t.faqSub}</p>
         </div>
 
-        <div className="mt-6 divide-y divide-[#D4CCB9] rounded-xl border border-[#C8BFA8] bg-[#F6F3EB]">
+        <div className="mt-6 divide-y divide-[var(--ak-divider)] rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)]">
           {(gateway?.faqs || []).map((faq, idx) => {
             const isOpen = openFaqIdx === idx;
             return (
@@ -1448,17 +1450,17 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 <button
                   type="button"
                   onClick={() => setOpenFaqIdx(isOpen ? null : idx)}
-                  className="flex w-full items-center justify-between gap-4 px-6 py-4 text-start text-base font-semibold text-[#0C1B2E] hover:bg-[#E6E0D3]/60"
+                  className="flex w-full items-center justify-between gap-4 px-6 py-4 text-start text-base font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated)]"
                 >
                   <span>{faq.question}</span>
                   <ChevronDown
-                    className={`h-5 w-5 shrink-0 text-[#4A463F] transition-transform ${
+                    className={`h-5 w-5 shrink-0 text-[var(--ak-muted)] transition-transform ${
                       isOpen ? 'rotate-180' : ''
                     }`}
                   />
                 </button>
                 {isOpen && (
-                  <div className="px-6 pb-5 text-base leading-relaxed text-[#2D3D50]">
+                  <div className="px-6 pb-5 text-base leading-relaxed text-[var(--ak-ink-2)]">
                     {faq.answer}
                   </div>
                 )}
@@ -1470,12 +1472,12 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
       {/* 14. Final Call-to-Action Banner */}
       <section className="mx-auto max-w-7xl px-4 pb-14 sm:px-6">
-        <div className="overflow-hidden rounded-xl border border-[#243952] bg-[#0C1B2E] text-[#F6F3EB]">
+        <div className="overflow-hidden rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] text-[var(--ak-ink)]">
           <div className="african-weave-rule" />
           <div className="flex flex-wrap items-center justify-between gap-6 px-6 py-9 sm:px-8">
             <div>
               <h2 className="font-display text-3xl font-bold tracking-tight">{t.finalCtaTitle}</h2>
-              <p className="mt-1.5 text-base text-[#CBD5E1]">{t.finalCtaSub}</p>
+              <p className="mt-1.5 text-base text-[var(--ak-ink-2)]">{t.finalCtaSub}</p>
             </div>
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
               <button
@@ -1483,13 +1485,13 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                 onClick={() =>
                   currentUser ? onEnterDashboard() : onOpenAuth('REGISTER_LEARNER')
                 }
-                className="min-h-[46px] rounded-lg bg-[#A44A1C] px-6 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#8A3B14] whitespace-nowrap"
+                className="min-h-[46px] rounded-lg bg-[#C9642E] px-6 py-3 text-base font-semibold text-[#F8F5EE] hover:bg-[#D8733C] whitespace-nowrap"
               >
                 {currentUser ? t.openDashboard : t.ctaLearner}
               </button>
               <a
                 href="#apply"
-                className="flex min-h-[46px] items-center justify-center rounded-lg border border-[#D4CCB9] px-6 py-3 text-base font-semibold text-[#F6F3EB] hover:bg-[#13263E] whitespace-nowrap"
+                className="flex min-h-[46px] items-center justify-center rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] px-6 py-3 text-base font-semibold text-[var(--ak-ink)] hover:bg-[var(--ak-elevated-hover)] whitespace-nowrap"
               >
                 {t.ctaContributor}
               </a>
@@ -1498,38 +1500,38 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
         </div>
       </section>
 
-      {/* 15. Clean Footer (logo kept strictly in software top navbar, subtle credit only) */}
-      <footer className="border-t border-[#C8BFA8] bg-[#E6E0D3]">
+      {/* 15. Clean Footer */}
+      <footer className="border-t border-[var(--ak-divider)] bg-[var(--ak-recessed)]">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
-          <div className="grid gap-8 md:grid-cols-4 text-sm text-[#2D3D50]">
+          <div className="grid gap-8 md:grid-cols-4 text-sm text-[var(--ak-ink-2)]">
             <div className="space-y-2.5">
               <BrandMark brandName={brandName} showLogo={false} />
               <p>{gateway?.brandConfig.physicalAddress}</p>
               <p>Support: {gateway?.brandConfig.supportEmail}</p>
               <p>WhatsApp / Helpdesk: {gateway?.brandConfig.supportWhatsApp}</p>
-              <p className="pt-1 text-xs text-[#55514A]">Software by Novic Technologies</p>
+              <p className="pt-1 text-xs text-[var(--ak-muted)]">Software by Novic Technologies</p>
             </div>
 
             <div className="space-y-2.5">
-              <p className="text-base font-bold text-[#0C1B2E]">{t.footerPlatform}</p>
+              <p className="text-base font-bold text-[var(--ak-ink)]">{t.footerPlatform}</p>
               <ul className="space-y-2">
                 <li>
-                  <a href="#about" className="hover:text-[#0C1B2E] hover:underline">
+                  <a href="#about" className="hover:text-[var(--ak-accent-ink)] hover:underline">
                     {t.navAbout}
                   </a>
                 </li>
                 <li>
-                  <a href="#resources" className="hover:text-[#0C1B2E] hover:underline">
+                  <a href="#resources" className="hover:text-[var(--ak-accent-ink)] hover:underline">
                     {t.navResources}
                   </a>
                 </li>
                 <li>
-                  <a href="#pricing" className="hover:text-[#0C1B2E] hover:underline">
+                  <a href="#pricing" className="hover:text-[var(--ak-accent-ink)] hover:underline">
                     {t.navPricing}
                   </a>
                 </li>
                 <li>
-                  <a href="#help" className="hover:text-[#0C1B2E] hover:underline">
+                  <a href="#help" className="hover:text-[var(--ak-accent-ink)] hover:underline">
                     {t.navHelp}
                   </a>
                 </li>
@@ -1537,13 +1539,13 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             </div>
 
             <div className="space-y-2.5">
-              <p className="text-base font-bold text-[#0C1B2E]">{t.footerPolicies}</p>
+              <p className="text-base font-bold text-[var(--ak-ink)]">{t.footerPolicies}</p>
               <ul className="space-y-2">
                 <li>
                   <button
                     type="button"
                     onClick={() => setPolicyModal('TERMS')}
-                    className="hover:text-[#0C1B2E] hover:underline"
+                    className="hover:text-[var(--ak-accent-ink)] hover:underline"
                   >
                     {t.policyTerms}
                   </button>
@@ -1552,7 +1554,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => setPolicyModal('PRIVACY')}
-                    className="hover:text-[#0C1B2E] hover:underline"
+                    className="hover:text-[var(--ak-accent-ink)] hover:underline"
                   >
                     {t.policyPrivacy}
                   </button>
@@ -1561,7 +1563,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => setPolicyModal('CONTRIBUTOR_AGREEMENT')}
-                    className="hover:text-[#0C1B2E] hover:underline"
+                    className="hover:text-[var(--ak-accent-ink)] hover:underline"
                   >
                     {t.policyContributor}
                   </button>
@@ -1570,7 +1572,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => setPolicyModal('REFUND')}
-                    className="hover:text-[#0C1B2E] hover:underline"
+                    className="hover:text-[var(--ak-accent-ink)] hover:underline"
                   >
                     {t.policyRefund}
                   </button>
@@ -1579,7 +1581,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => setPolicyModal('COPYRIGHT')}
-                    className="hover:text-[#0C1B2E] hover:underline"
+                    className="hover:text-[var(--ak-accent-ink)] hover:underline"
                   >
                     {t.policyCopyright}
                   </button>
@@ -1588,7 +1590,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => setPolicyModal('CHILD_SAFETY')}
-                    className="hover:text-[#0C1B2E] hover:underline"
+                    className="hover:text-[var(--ak-accent-ink)] hover:underline"
                   >
                     {t.policyChildSafety}
                   </button>
@@ -1597,23 +1599,24 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             </div>
 
             <div className="space-y-3">
-              <p className="text-base font-bold text-[#0C1B2E]">{t.footerPayments}</p>
+              <p className="text-base font-bold text-[var(--ak-ink)]">{t.footerPayments}</p>
               <div className="flex flex-wrap gap-1.5">
                 {gateway?.brandConfig.paymentMethods.map((pm) => (
                   <span
                     key={pm}
-                    className="rounded-md border border-[#C8BFA8] bg-[#F6F3EB] px-2.5 py-1 text-sm font-medium text-[#0C1B2E]"
+                    className="rounded-md border border-[var(--ak-border)] bg-[var(--ak-surface)] px-2.5 py-1 text-sm font-medium text-[var(--ak-ink)]"
                   >
                     {pm}
                   </span>
                 ))}
               </div>
               <div className="flex flex-wrap items-center gap-3 pt-1">
+                <ThemeToggle compact />
                 <LanguageSelector compact />
                 <button
                   type="button"
                   onClick={() => setPolicyModal('REPORT')}
-                  className="font-semibold text-red-800 hover:underline"
+                  className="font-semibold text-[var(--ak-err-fg)] hover:underline"
                 >
                   {t.reportAbuse}
                 </button>
@@ -1621,7 +1624,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               <button
                 type="button"
                 onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                className="inline-flex items-center gap-1 text-sm font-semibold text-[#0C1B2E] hover:underline"
+                className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--ak-accent-ink)] hover:underline"
               >
                 <ChevronUp className="h-4 w-4" />
                 {t.backToTop}
@@ -1633,12 +1636,12 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
       {/* Policy & Report Abuse Modal */}
       {policyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C1B2E]/75 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-lg overflow-hidden rounded-xl border border-[#C8BFA8] bg-[#EFECE3] shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ak-backdrop)] p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg overflow-hidden rounded-xl border border-[var(--ak-border)] bg-[var(--ak-surface)] shadow-2xl">
             <div className="african-weave-rule" />
             <div className="p-6">
-              <div className="flex items-center justify-between border-b border-[#D4CCB9] pb-3">
-                <h3 className="font-display text-lg font-bold text-[#0C1B2E]">
+              <div className="flex items-center justify-between border-b border-[var(--ak-divider)] pb-3">
+                <h3 className="font-display text-lg font-bold text-[var(--ak-ink)]">
                   {policyModal === 'REPORT'
                     ? t.reportAbuse
                     : policyModal === 'PRIVACY'
@@ -1661,7 +1664,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                     setReportErr('');
                   }}
                   aria-label="Close modal"
-                  className="rounded-lg p-1.5 text-[#2D3D50] hover:bg-[#E6E0D3]"
+                  className="rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] p-1.5 text-[var(--ak-ink-2)] hover:bg-[var(--ak-elevated-hover)]"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -1670,13 +1673,17 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               {policyModal === 'REPORT' ? (
                 <form onSubmit={handleSubmitReport} className="mt-4 space-y-3 text-sm">
                   {reportErr && (
-                    <div className="rounded-lg bg-red-50 p-3 text-red-900">{reportErr}</div>
+                    <div className="rounded-lg border border-[var(--ak-err-bd)] bg-[var(--ak-err-bg)] p-3 text-[var(--ak-err-fg)]">
+                      {reportErr}
+                    </div>
                   )}
                   {reportSent && (
-                    <div className="rounded-lg bg-[#E8F0EA] p-3 text-[#1E5631]">{reportSent}</div>
+                    <div className="rounded-lg border border-[var(--ak-ok-bd)] bg-[var(--ak-ok-bg)] p-3 text-[var(--ak-ok-fg)]">
+                      {reportSent}
+                    </div>
                   )}
                   <div>
-                    <label className="mb-1 block font-semibold text-[#0C1B2E]">Your Email</label>
+                    <label className="mb-1 block font-semibold text-[var(--ak-ink-2)]">Your Email</label>
                     <input
                       type="email"
                       required
@@ -1687,7 +1694,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block font-semibold text-[#0C1B2E]">Issue Summary</label>
+                    <label className="mb-1 block font-semibold text-[var(--ak-ink-2)]">Issue Summary</label>
                     <input
                       type="text"
                       required
@@ -1698,7 +1705,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block font-semibold text-[#0C1B2E]">Details</label>
+                    <label className="mb-1 block font-semibold text-[var(--ak-ink-2)]">Details</label>
                     <textarea
                       required
                       rows={3}
@@ -1709,13 +1716,13 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   </div>
                   <button
                     type="submit"
-                    className="min-h-[44px] rounded-lg bg-red-800 px-5 py-2.5 text-sm font-semibold text-[#F6F3EB] hover:bg-red-900"
+                    className="min-h-[44px] rounded-lg bg-red-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-600"
                   >
                     Submit to Moderation Team
                   </button>
                 </form>
               ) : (
-                <div className="mt-4 space-y-3 text-base leading-relaxed text-[#2D3D50]">
+                <div className="mt-4 space-y-3 text-base leading-relaxed text-[var(--ak-ink-2)]">
                   {policyModal === 'PRIVACY' && (
                     <p>
                       {brandName} collects only necessary academic and identity verification records.

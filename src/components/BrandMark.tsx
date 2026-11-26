@@ -23,17 +23,17 @@ export const BrandMark: React.FC<BrandMarkProps> = ({
   return (
     <span className="inline-flex items-center gap-3 whitespace-nowrap shrink-0">
       {showLogo && (
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[#D4CCB9] bg-[#F6F3EB] p-1">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--ak-border)] bg-[var(--ak-elevated)] p-1">
           {!imgError ? (
             <img
               src={logoUrl}
               alt={`${brandName} emblem`}
               referrerPolicy="no-referrer"
               onError={() => setImgError(true)}
-              className="h-full w-full object-contain"
+              className="h-full w-full object-contain rounded"
             />
           ) : (
-            <span className="font-display text-base font-bold text-[#0C1B2E]">
+            <span className="font-display text-base font-bold text-[var(--ak-ink)]">
               {brandName.slice(0, 1).toUpperCase()}
             </span>
           )}
@@ -42,7 +42,7 @@ export const BrandMark: React.FC<BrandMarkProps> = ({
       {!compact && (
         <span
           className={`font-display text-xl font-bold tracking-tight ${
-            darkSurface ? 'text-[#F6F3EB]' : 'text-[#0C1B2E]'
+            darkSurface ? 'text-[#F3EFE6]' : 'text-[var(--ak-ink)]'
           }`}
         >
           {brandName}
